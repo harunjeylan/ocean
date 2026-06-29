@@ -1,10 +1,14 @@
 use std::path::PathBuf;
+use std::sync::mpsc;
+use std::sync::Arc;
 
 use clap::Parser;
 
-use crate::ocean_cli::args::{Cli, Commands, ReadArgs};
+use crate::ocean_chunk::*;
+use crate::ocean_cli::args::{ChunkArgs, Cli, Commands, ReadArgs};
 use crate::ocean_cli::display::*;
 use crate::ocean_cli::walk::*;
+use crate::ocean_fs::*;
 use crate::ocean_parser::*;
 
 pub fn run() -> Result<(), String> {
@@ -18,6 +22,11 @@ pub fn run() -> Result<(), String> {
         Commands::Search { file, query } => cmd_search(file, query),
         Commands::Grep { dir, query } => cmd_grep(dir, query),
         Commands::Read(args) => cmd_read(args),
+        Commands::Scan { dir, no_hash } => cmd_scan(dir, no_hash),
+        Commands::Hash { file } => cmd_hash(file),
+        Commands::Verify { file, hash } => cmd_verify(file, hash),
+        Commands::Watch { dir } => cmd_watch(dir),
+        Commands::Chunk(args) => cmd_chunk(args),
     }
 }
 
@@ -166,4 +175,113 @@ fn check_exists(file: &str) -> Result<PathBuf, String> {
         return Err(format!("file not found: {}", file));
     }
     Ok(p)
+}
+
+fn cmd_scan(dir: String, no_hash: bool) -> Result<(), String> {
+    if no_hash {
+        let metas = scan_dir(&dir).map_err(|e| format!("Scan failed: {}", e))?;
+        if metas.is_empty() {
+            println!("No supported files found in '{}'.", dir);
+        } else {
+            println!("Found {} file(s) in '{}':", metas.len(), dir);
+            for meta in &metas {
+                let size_kb = meta.size as f64 / 1024.0;
+                println!("  {:>8.1} KB  {:4}  {}", size_kb, meta.extension, meta.path);
+            }
+        }
+    } else {
+        let metas = scan_dir(&dir).map_err(|e| format!("Scan failed: {}", e))?;
+        if metas.is_empty() {
+            println!("No supported files found in '{}'.", dir);
+        } else {
+            println!("Found {} file(s) in '{}':", metas.len(), dir);
+            for meta in &metas {
+                let size_kb = meta.size as f64 / 1024.0;
+                let short_id = &meta.id[..8];
+                println!("  {}  {:>8.1} KB  {:4}  {}", short_id, size_kb, meta.extension, meta.path);
+            }
+        }
+    }
+    Ok(())
+}
+
+fn cmd_hash(file: String) -> Result<(), String> {
+    let hash = hash_file(&file).map_err(|e| format!("Hash failed: {}", e))?;
+    println!("{}", hash);
+    Ok(())
+}
+
+fn cmd_verify(file: String, hash: String) -> Result<(), String> {
+    let result = verify_hash(&file, &hash);
+    println!("{}", result);
+    Ok(())
+}
+
+fn cmd_watch(dir: String) -> Result<(), String> {
+    let watcher = FileWatcher::new();
+    let (tx, rx) = mpsc::channel::<FileEvent>();
+
+    let callback = Arc::new(move |event: FileEvent| {
+        let _ = tx.send(event);
+    });
+
+    let handle = watcher
+        .watch(&dir, callback)
+        .map_err(|e| format!("Watch failed: {}", e))?;
+
+    println!("Watching '{}'... Press Ctrl+C to stop.", dir);
+    for event in rx {
+        match event {
+            FileEvent::Created(meta) => println!("[CREATED]  {}", meta.path),
+            FileEvent::Modified(meta) => println!("[MODIFIED] {}", meta.path),
+            FileEvent::Deleted(id) => println!("[DELETED]  id={}", id),
+            FileEvent::Renamed { old_path, new_path, .. } => {
+                println!("[RENAMED]  {} -> {}", old_path, new_path);
+            }
+            FileEvent::Moved { old_path, new_path, .. } => {
+                println!("[MOVED]    {} -> {}", old_path, new_path);
+            }
+        }
+    }
+
+    watcher.unwatch(handle).map_err(|e| format!("Unwatch failed: {}", e))
+}
+
+fn cmd_chunk(args: ChunkArgs) -> Result<(), String> {
+    let doc = open(&args.file).map_err(|e| format!("Failed to open: {}", e))?;
+    let blocks = read_all_blocks(&*doc).map_err(|e| format!("Read failed: {}", e))?;
+
+    let config = ChunkConfig {
+        min_tokens: args.min_size,
+        max_tokens: args.max_size,
+        overlap_sentences: args.overlap,
+        include_images: args.include_images,
+        rows_per_sheet_chunk: args.rows_per_chunk,
+        token_estimator: None,
+    };
+
+    let file_id = crate::ocean_fs::generate_file_id();
+    let chunks = crate::ocean_chunk::chunk(blocks, &file_id, Some(config))
+        .map_err(|e| format!("Chunking failed: {}", e))?;
+
+    if chunks.is_empty() {
+        println!("No chunks produced.");
+        return Ok(());
+    }
+
+    println!("{} chunks from '{}':", chunks.len(), args.file);
+    for chunk in &chunks {
+        let token_est = estimate_tokens(&chunk.content);
+        let heading = chunk.heading.as_deref().unwrap_or("");
+        let short_id = &chunk.id[..8];
+        println!(
+            "  [{}] {:8}  h=\"{}\"  {} tokens",
+            short_id,
+            format!("{:?}", chunk.block_type),
+            heading,
+            token_est,
+        );
+    }
+
+    Ok(())
 }

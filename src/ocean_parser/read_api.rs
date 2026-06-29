@@ -1,4 +1,4 @@
-use crate::ocean_parser::{Document, DocumentError, ReadResult, Selector};
+use crate::ocean_parser::{Document, DocumentError, DocumentFormat, ReadResult, Selector};
 
 pub fn read(document: &dyn Document, selector: &Selector) -> Result<ReadResult, DocumentError> {
     document.read(selector)
@@ -59,4 +59,46 @@ pub fn read_range(
     end: usize,
 ) -> Result<ReadResult, DocumentError> {
     document.read(&Selector::Range { start, end })
+}
+
+pub fn read_all_blocks(doc: &dyn Document) -> Result<Vec<ReadResult>, DocumentError> {
+    let meta = doc.metadata();
+    let mut blocks = Vec::new();
+
+    match meta.format {
+        DocumentFormat::Pdf => {
+            let n = doc.page_count().unwrap_or(0);
+            for i in 1..=n {
+                if let Ok(page) = doc.read(&Selector::Page(i)) {
+                    blocks.push(page);
+                }
+            }
+        }
+        DocumentFormat::Pptx => {
+            let n = doc.page_count().unwrap_or(0);
+            for i in 1..=n {
+                if let Ok(slide) = doc.read(&Selector::Slide(i)) {
+                    blocks.push(slide);
+                }
+            }
+        }
+        DocumentFormat::Xlsx => {
+            let outline = doc.outline();
+            for entry in &outline.entries {
+                if let Ok(sheet) = doc.read(&entry.selector) {
+                    blocks.push(sheet);
+                }
+            }
+        }
+        DocumentFormat::Docx
+        | DocumentFormat::Html
+        | DocumentFormat::Text
+        | DocumentFormat::Markdown => {
+            if let Ok(result) = doc.read(&Selector::Slice { skip: 0, take: u32::MAX }) {
+                blocks.push(result);
+            }
+        }
+    }
+
+    Ok(blocks)
 }

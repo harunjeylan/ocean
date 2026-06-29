@@ -16,6 +16,11 @@ pub enum Commands {
     Search { file: String, query: String },
     Grep { dir: String, query: String },
     Read(ReadArgs),
+    Scan { dir: String, #[arg(long)] no_hash: bool },
+    Hash { file: String },
+    Verify { file: String, hash: String },
+    Watch { dir: String },
+    Chunk(ChunkArgs),
 }
 
 #[derive(Args)]
@@ -43,4 +48,19 @@ pub struct ReadArgs {
     pub skip: Option<u32>,
     #[arg(long)]
     pub take: Option<u32>,
+}
+
+#[derive(Args)]
+pub struct ChunkArgs {
+    pub file: String,
+    #[arg(long, default_value = "100")]
+    pub min_size: usize,
+    #[arg(long, default_value = "800")]
+    pub max_size: usize,
+    #[arg(long, default_value = "1")]
+    pub overlap: usize,
+    #[arg(long)]
+    pub include_images: bool,
+    #[arg(long, default_value = "50")]
+    pub rows_per_chunk: usize,
 }

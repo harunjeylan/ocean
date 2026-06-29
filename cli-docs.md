@@ -185,6 +185,130 @@ ocean read data.xlsx --skip 1 --take 2           # sheets 2-3
 
 Unsupported extensions return `Error: unsupported format`.
 
+---
+
+## File System Commands
+
+### scan — Scan directory for supported documents
+
+List all supported files with metadata (ID, size, extension, path).
+
+```
+ocean scan <dir> [--no-hash]
+```
+
+By default scans compute SHA-256 hashes for each file. Use `--no-hash` to skip hashing for faster scans on large directories.
+
+```
+ocean scan ./documents
+  Found 43 file(s) in './documents':
+    019f14f7       0.1 KB  html  ./documents/index.html
+    019f18f2     12.3 KB  pdf   ./documents/report.pdf
+    019f1a45      4.2 KB  docx  ./documents/notes.docx
+```
+
+```
+ocean scan ./documents --no-hash
+  Found 43 file(s) in './documents':
+        0.1 KB  html  ./documents/index.html
+       12.3 KB  pdf   ./documents/report.pdf
+```
+
+### hash — Compute file hash
+
+Compute the SHA-256 hash of a file.
+
+```
+ocean hash <file>
+```
+
+```
+ocean hash report.pdf
+  dffd6021bb2bd5b0af676290809ec3a53191dd81c7f70a4b28688a362182986f
+```
+
+### verify — Verify file hash
+
+Check whether a file matches an expected SHA-256 hash. Prints `true` or `false`.
+
+```
+ocean verify <file> <expected-hash>
+```
+
+```
+ocean verify report.pdf dffd6021bb2bd5b0af676290809ec3a53191dd81c7f70a4b28688a362182986f
+  true
+```
+
+### watch — Watch directory for file changes
+
+Monitor a directory for file creation, modification, deletion, and renaming. Runs until Ctrl+C.
+
+```
+ocean watch <dir>
+```
+
+```
+ocean watch ./documents
+  Watching './documents'... Press Ctrl+C to stop.
+  [CREATED]  ./documents/new_notes.txt
+  [MODIFIED] ./documents/report.pdf
+  [DELETED]  id=019f14f7...
+  [RENAMED]  ./documents/old.txt -> ./documents/new.txt
+```
+
+---
+
+## Chunk Command
+
+### chunk — Semantic chunking of document content
+
+Parse a document and split it into semantic chunks (text blocks, tables, slides, sheets) based on token-size limits. Each chunk is displayed with its ID, type, heading context, and token estimate.
+
+```
+ocean chunk <file> [--min-size <N>] [--max-size <N>] [--overlap <N>] [--include-images] [--rows-per-chunk <N>]
+```
+
+**Options:**
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--min-size` | 100 | Minimum tokens per chunk |
+| `--max-size` | 800 | Maximum tokens per chunk |
+| `--overlap` | 1 | Overlap sentences between consecutive chunks |
+| `--include-images` | false | Include image blocks in chunks |
+| `--rows-per-chunk` | 50 | Rows per spreadsheet chunk |
+
+**Chunk types:** Text, Heading, Table, Slide, Sheet, Cell, Image, Page
+
+```
+ocean chunk chapter.md
+  5 chunks from 'chapter.md':
+    [019f21a1] Text      h="Introduction"  342 tokens
+    [019f21a2] Heading   h="Background"      0 tokens
+    [019f21a3] Text      h="Background"    567 tokens
+    [019f21a4] Heading   h="Conclusion"      0 tokens
+    [019f21a5] Text      h="Conclusion"    123 tokens
+```
+
+```
+ocean chunk presentation.pptx --max-size 400
+  12 chunks from 'presentation.pptx':
+    [019f21b1] Slide     h="Slide 1"       89 tokens
+    [019f21b2] Slide     h="Overview"     234 tokens
+    ...
+```
+
+```
+ocean chunk data.xlsx --rows-per-chunk 100
+  3 chunks from 'data.xlsx':
+    [019f21c1] Sheet     h="Sheet1"      450 tokens
+    [019f21c2] Sheet     h="Sheet2"      210 tokens
+    [019f21c3] Sheet     h="Summary"      90 tokens
+```
+
+---
+
 ## Exit codes
 
 | Code | Meaning |

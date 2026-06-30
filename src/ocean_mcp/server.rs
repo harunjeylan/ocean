@@ -36,7 +36,7 @@ impl ServerHandler for OceanMcpServer {
                 .build(),
         )
         .with_server_info(
-            Implementation::new("ocean-mcp", env!("CARGO_PKG_VERSION"))
+            Implementation::new("ocean_mcp", env!("CARGO_PKG_VERSION"))
                 .with_description("Document intelligence MCP server"),
         )
         .with_instructions(
@@ -96,7 +96,11 @@ impl ServerHandler for OceanMcpServer {
                 },
                 "required": ["directory"]
             }).as_object().unwrap().clone())),
-            Tool::new("chunk", "Split a document into semantic chunks with configurable token bounds", Arc::new(serde_json::json!({
+        ];
+
+        // TODO(v2.0): remove this conditional — vector tools graduate to stable (always include)
+        if vector_enabled {
+            tools.push(Tool::new("chunk", "Split a document into semantic chunks with configurable token bounds", Arc::new(serde_json::json!({
                 "type": "object",
                 "properties": {
                     "file_path": { "type": "string", "description": "Path to the document file" },
@@ -105,19 +109,15 @@ impl ServerHandler for OceanMcpServer {
                     "overlap": { "type": "integer", "minimum": 0, "default": 1 }
                 },
                 "required": ["file_path"]
-            }).as_object().unwrap().clone())),
-            Tool::new("verify", "Compute and verify a file's SHA-256 hash against an expected value", Arc::new(serde_json::json!({
+            }).as_object().unwrap().clone())));
+            tools.push(Tool::new("verify", "Compute and verify a file's SHA-256 hash against an expected value", Arc::new(serde_json::json!({
                 "type": "object",
                 "properties": {
                     "file_path": { "type": "string", "description": "Path to the file" },
                     "expected_hash": { "type": "string", "description": "Expected SHA-256 hash" }
                 },
                 "required": ["file_path", "expected_hash"]
-            }).as_object().unwrap().clone())),
-        ];
-
-        // TODO(v2.0): remove this conditional — vector tools graduate to stable (always include)
-        if vector_enabled {
+            }).as_object().unwrap().clone())));
             tools.push(Tool::new("query", "Semantic search over indexed documents (requires 'ocean index' to have run)", Arc::new(serde_json::json!({
                 "type": "object",
                 "properties": {
@@ -201,14 +201,14 @@ impl ServerHandler for OceanMcpServer {
             "grep" => Ok(tools::doc_tools::handle_grep(serde_json::from_value(json_args).map_err(|e| McpError::invalid_params(format!("Invalid params: {}", e), None))?).await),
             "info" => Ok(tools::doc_tools::handle_info(serde_json::from_value(json_args).map_err(|e| McpError::invalid_params(format!("Invalid params: {}", e), None))?).await),
             "scan" => Ok(tools::doc_tools::handle_scan(serde_json::from_value(json_args).map_err(|e| McpError::invalid_params(format!("Invalid params: {}", e), None))?).await),
-            "chunk" => Ok(tools::doc_tools::handle_chunk(serde_json::from_value(json_args).map_err(|e| McpError::invalid_params(format!("Invalid params: {}", e), None))?).await),
-            "verify" => Ok(tools::doc_tools::handle_verify(serde_json::from_value(json_args).map_err(|e| McpError::invalid_params(format!("Invalid params: {}", e), None))?).await),
+            "chunk" if vector_enabled => Ok(tools::doc_tools::handle_chunk(serde_json::from_value(json_args).map_err(|e| McpError::invalid_params(format!("Invalid params: {}", e), None))?).await), // TODO(v2.0): remove guard
+            "verify" if vector_enabled => Ok(tools::doc_tools::handle_verify(serde_json::from_value(json_args).map_err(|e| McpError::invalid_params(format!("Invalid params: {}", e), None))?).await), // TODO(v2.0): remove guard
             "query" if vector_enabled => Ok(tools::query_tools::handle_query(serde_json::from_value(json_args).map_err(|e| McpError::invalid_params(format!("Invalid params: {}", e), None))?).await), // TODO(v2.0): remove guard, always dispatch
             "vector_status" if vector_enabled => Ok(tools::query_tools::handle_vector_status(serde_json::from_value(json_args).map_err(|e| McpError::invalid_params(format!("Invalid params: {}", e), None))?).await), // TODO(v2.0): remove guard
             "graph_info" if graph_enabled => Ok(tools::graph_tools::handle_graph_info(serde_json::from_value(json_args).map_err(|e| McpError::invalid_params(format!("Invalid params: {}", e), None))?).await), // TODO(v2.0): remove guard
             "graph_expand" if graph_enabled => Ok(tools::graph_tools::handle_graph_expand(serde_json::from_value(json_args).map_err(|e| McpError::invalid_params(format!("Invalid params: {}", e), None))?).await), // TODO(v2.0): remove guard
             "graph_stats" if graph_enabled => Ok(tools::graph_tools::handle_graph_stats(serde_json::from_value(json_args).map_err(|e| McpError::invalid_params(format!("Invalid params: {}", e), None))?).await), // TODO(v2.0): remove guard
-            "query" | "vector_status" => Err(experimental_err("vector")), // TODO(v2.0): remove fallthrough arms
+            "query" | "vector_status" | "chunk" | "verify" => Err(experimental_err("vector")), // TODO(v2.0): remove fallthrough arms
             "graph_info" | "graph_expand" | "graph_stats" => Err(experimental_err("graph")), // TODO(v2.0): remove fallthrough arms
             _ => Err(McpError::method_not_found::<CallToolRequestMethod>()),
         }

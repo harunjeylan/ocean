@@ -46,7 +46,7 @@ pub fn cmd_mcp_setup(agent: Option<String>, write_mode: bool) -> Result<(), Stri
 }
 
 fn resolve_mcp_binary() -> Result<String, String> {
-    for name in &["mcp", "ocean-mcp"] {
+    for name in &["ocean_mcp", "mcp", "ocean-mcp"] {
         if find_in_path(name) {
             return Ok(name.to_string());
         }
@@ -58,15 +58,15 @@ fn resolve_mcp_binary() -> Result<String, String> {
                 std::env::current_dir().ok().and_then(|cwd| find_cargo_toml(cwd))
             });
         if let Some(dir) = manifest_dir {
-            eprintln!("Warning: 'mcp' binary not found in PATH.");
+            eprintln!("Warning: 'ocean_mcp' binary not found in PATH.");
             eprintln!("  Run `cargo install --path \"{}\"` to install it, or use the full path.", dir);
-            eprintln!("  Using 'mcp' as the command name for config generation (adjust if needed).");
-            return Ok("mcp".to_string());
+            eprintln!("  Using 'ocean_mcp' as the command name for config generation (adjust if needed).");
+            return Ok("ocean_mcp".to_string());
         }
     }
 
     Err(
-        "MCP binary not found in PATH. Install it with `cargo install --path .` or ensure 'mcp' or 'ocean-mcp' is in your PATH."
+        "MCP binary not found in PATH. Install it with `cargo install --path .` or ensure 'ocean_mcp' is in your PATH."
             .to_string(),
     )
 }

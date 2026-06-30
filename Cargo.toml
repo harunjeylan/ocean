@@ -40,11 +40,11 @@ name = "ocean"
 path = "src/main.rs"
 
 [[bin]]
-name = "cli"
+name = "ocean_cli"
 path = "src/cli.rs"
 
 [[bin]]
-name = "mcp"
+name = "ocean_mcp"
 path = "src/mcp.rs"
 
 [dev-dependencies]

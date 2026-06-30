@@ -133,8 +133,9 @@ cargo test --test parser_real_files    # real file acceptance test
 cargo test --lib <test_name>       # specific test (cargo test --lib path_resolver)
 cargo build                        # debug
 cargo build --release              # release
-cargo run --bin ocean -- <args>    # run CLI (default binary)
-cargo run --bin cli -- <args>      # run explicit CLI binary
+cargo run --bin ocean -- <args>         # run CLI (default binary)
+cargo run --bin ocean_cli -- <args>     # run explicit CLI binary
+cargo run --bin ocean_mcp -- <args>     # run MCP server (stdio transport)
 ```
 
 ## Patterns & conventions

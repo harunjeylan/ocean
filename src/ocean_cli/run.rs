@@ -93,14 +93,20 @@ pub fn run() -> Result<(), String> {
             cmd_scan(dir, no_hash)
         }
         Commands::Hash { file } => cmd_hash(file),
-        Commands::Verify { file, hash } => cmd_verify(file, hash),
+        Commands::Verify { file, hash } => {
+            check_experimental(&config, "vector", "verify")?; // TODO(v2.0): remove — graduates with vector
+            cmd_verify(file, hash)
+        }
         Commands::Watch { dir, no_sandbox } => {
             if read_only {
                 return Err("watch is disabled in read-only mode".to_string());
             }
             cmd_watch(dir, no_sandbox)
         }
-        Commands::Chunk(args) => cmd_chunk(args),
+        Commands::Chunk(args) => {
+            check_experimental(&config, "vector", "chunk")?; // TODO(v2.0): remove — graduates with vector
+            cmd_chunk(args)
+        }
         Commands::Index(_) => unreachable!(),
         Commands::Query(_) => unreachable!(),
         Commands::VectorSearch(args) => {

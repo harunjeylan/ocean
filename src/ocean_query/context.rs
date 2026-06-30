@@ -1,13 +1,15 @@
+use std::sync::Arc;
+
 use crate::ocean_query::error::QueryError;
 use crate::ocean_query::types::{ContextChunk, ContextWindow, RankedChunk};
-use crate::ocean_vector::store::VectorStore;
+use crate::ocean_storage::ChunkStore;
 
 pub struct ContextWindowBuilder {
-    store: VectorStore,
+    store: Arc<dyn ChunkStore>,
 }
 
 impl ContextWindowBuilder {
-    pub fn new(store: VectorStore) -> Self {
+    pub fn new(store: Arc<dyn ChunkStore>) -> Self {
         Self { store }
     }
 
@@ -38,7 +40,7 @@ impl ContextWindowBuilder {
 
         let all_chunks = self
             .store
-            .get_chunks_by_file_and_heading(&file_id, anchor_heading.as_deref())
+            .get_by_file_and_heading(&file_id, anchor_heading.as_deref())
             .map_err(|e| QueryError::ContextBuildFailed(e.to_string()))?;
 
         let anchor_pos = all_chunks

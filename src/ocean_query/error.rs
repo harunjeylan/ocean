@@ -2,13 +2,12 @@ use std::fmt;
 
 use crate::ocean_graph::error::GraphError;
 use crate::ocean_vector::embedder::EmbedderError;
-use crate::ocean_vector::store::StoreError;
 
 #[derive(Debug, Clone)]
 pub enum QueryError {
     NoResults,
     EmbeddingFailed(EmbedderError),
-    VectorSearchFailed(StoreError),
+    VectorSearchFailed(String),
     GraphExpandFailed(GraphError),
     ContextBuildFailed(String),
     InvalidQuery(String),

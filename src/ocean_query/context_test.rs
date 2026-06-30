@@ -1,11 +1,11 @@
 use crate::ocean_query::context::ContextWindowBuilder;
 use crate::ocean_query::types::RankedChunk;
-use crate::ocean_vector::store::VectorStore;
+use crate::ocean_storage::chunk_store::ChunkStore;
+use crate::ocean_storage::SurrealChunkStore;
+use std::sync::Arc;
 
-fn init_store() -> VectorStore {
-    let store = VectorStore::new_memory().expect("failed to create memory store");
-    let _ = store.initialize_schema(4);
-    store
+fn init_store() -> Arc<dyn ChunkStore> {
+    Arc::new(SurrealChunkStore::new_memory().expect("failed to create memory store"))
 }
 
 #[test]

@@ -16,6 +16,10 @@ use crate::ocean_fs::*;
 use crate::ocean_graph::*;
 use crate::ocean_parser::*;
 use crate::ocean_query::*;
+use crate::ocean_storage::config::StorageConfig;
+use crate::ocean_storage::graph_store::{EdgeDirection, GraphStore};
+use crate::ocean_storage::vector_store::VectorStore;
+use crate::ocean_storage::{SurrealChunkStore, SurrealGraphStore, SurrealVectorStore};
 use crate::ocean_vector::*;
 
 pub fn run() -> Result<(), String> {
@@ -380,7 +384,8 @@ fn cmd_index(args: IndexArgs, config: &Option<OceanConfig>) -> Result<(), String
     let vector_path = format!("{}/vector.db", base_path);
     let graph_path = format!("{}/graph.db", base_path);
 
-    let store = VectorStore::new_persistent(&vector_path)
+    let vconfig = StorageConfig::new(&vector_path);
+    let vstore = SurrealVectorStore::new_persistent_at(&vector_path, &vconfig)
         .map_err(|e| format!("Failed to open store: {}", e))?;
 
     let dim = resolve_index_dimension(
@@ -389,11 +394,15 @@ fn cmd_index(args: IndexArgs, config: &Option<OceanConfig>) -> Result<(), String
         &model,
         config.as_ref(),
     );
-    store.initialize_schema(dim)
+    vstore.initialize_schema(dim)
         .map_err(|e| format!("Failed to init schema: {}", e))?;
 
-    let graph_store = if !args.no_graph {
-        let gs = GraphStore::new_persistent(&graph_path)
+    let cstore = SurrealChunkStore::new_persistent_at(&vector_path)
+        .map_err(|e| format!("Failed to open chunk store: {}", e))?;
+
+    let graph_store: Option<SurrealGraphStore> = if !args.no_graph {
+        let gconfig = StorageConfig::new(&graph_path);
+        let gs = SurrealGraphStore::new_persistent_at(&graph_path, &gconfig)
             .map_err(|e| format!("Failed to open graph store: {}", e))?;
         gs.initialize_schema()
             .map_err(|e| format!("Failed to init graph schema: {}", e))?;
@@ -417,7 +426,7 @@ fn cmd_index(args: IndexArgs, config: &Option<OceanConfig>) -> Result<(), String
     let embedder = create_embedder(&provider, &model, &base_url,
         api_key.as_deref())?;
 
-    let pipeline = IndexPipeline::new(store);
+    let pipeline = IndexPipeline::new(Arc::new(vstore), Arc::new(cstore));
 
     let config = IndexConfig {
         batch_size: args.batch_size,
@@ -512,8 +521,7 @@ fn cmd_index(args: IndexArgs, config: &Option<OceanConfig>) -> Result<(), String
         }
 
         if let Some(ref gs) = graph_store {
-            let _ = gs.delete_nodes_by_file(&file_id);
-            let _ = gs.delete_edges_by_file(&file_id);
+            let _ = gs.delete_by_file(&file_id);
 
             let (nodes, edges) = GraphBuilder::from_chunks(&chunks, &file_id, &graph_config);
             let node_count = nodes.len();
@@ -637,9 +645,10 @@ fn cmd_vector_search(args: VectorSearchArgs, config: &Option<OceanConfig>) -> Re
     let vector_path = format!("{}/vector.db", base_path);
     let graph_path = format!("{}/graph.db", base_path);
 
-    let store = VectorStore::new_persistent(&vector_path)
+    let vconfig = StorageConfig::new(&vector_path);
+    let vstore = SurrealVectorStore::new_persistent_at(&vector_path, &vconfig)
         .map_err(|e| format!("Failed to open store: {}", e))?;
-    let engine = SearchEngine::new(store);
+    let engine = SearchEngine::new(Arc::new(vstore));
 
     let api_key = crate::ocean_cli::config::resolve_api_key(
         args.api_key.as_deref(),
@@ -695,9 +704,10 @@ fn cmd_vector_search(args: VectorSearchArgs, config: &Option<OceanConfig>) -> Re
     let results = match results {
         Ok(mut results) => {
             if args.expand_depth > 0 {
-                if let Ok(graph_store) = GraphStore::new_persistent(&graph_path) {
-                    if graph_store.initialize_schema().is_ok() {
-                        let expansion = ExpansionEngine::new(graph_store);
+                let gconfig = StorageConfig::new(&graph_path);
+                if let Ok(gs) = SurrealGraphStore::new_persistent_at(&graph_path, &gconfig) {
+                    if gs.initialize_schema().is_ok() {
+                        let expansion = ExpansionEngine::new(Arc::new(gs));
                         if let Ok(expanded) = engine.expand_results(&results, &expansion, args.expand_depth) {
                             results = expanded;
                         }
@@ -805,7 +815,8 @@ fn cmd_graph(args: GraphArgs) -> Result<(), String> {
 }
 
 fn cmd_graph_info(file: String, db_path: String) -> Result<(), String> {
-    let store = GraphStore::new_persistent(&db_path)
+    let config = StorageConfig::new(&db_path);
+    let store = SurrealGraphStore::new_persistent_at(&db_path, &config)
         .map_err(|e| format!("Failed to open graph store: {}", e))?;
 
     let metas = scan_dir(&file).map_err(|e| format!("Scan failed: {}", e))?;
@@ -814,7 +825,7 @@ fn cmd_graph_info(file: String, db_path: String) -> Result<(), String> {
     }
     let file_id = &metas[0].id;
 
-    let subgraph = ExpansionEngine::new(store)
+    let subgraph = ExpansionEngine::new(Arc::new(store))
         .get_file_graph(file_id)
         .map_err(|e| format!("Failed to get file graph: {}", e))?;
 
@@ -832,7 +843,8 @@ fn cmd_graph_info(file: String, db_path: String) -> Result<(), String> {
 }
 
 fn cmd_graph_expand(node_id: String, depth: usize, direction: String, db_path: String) -> Result<(), String> {
-    let store = GraphStore::new_persistent(&db_path)
+    let config = StorageConfig::new(&db_path);
+    let store = SurrealGraphStore::new_persistent_at(&db_path, &config)
         .map_err(|e| format!("Failed to open graph store: {}", e))?;
 
     let dir = match direction.to_lowercase().as_str() {
@@ -842,7 +854,7 @@ fn cmd_graph_expand(node_id: String, depth: usize, direction: String, db_path: S
         other => return Err(format!("invalid direction '{}'. Use: forward, backward, both", other)),
     };
 
-    let engine = ExpansionEngine::new(store);
+    let engine = ExpansionEngine::new(Arc::new(store));
     let subgraph = engine
         .expand(&node_id, depth, dir)
         .map_err(|e| format!("Expansion failed: {}", e))?;
@@ -852,10 +864,11 @@ fn cmd_graph_expand(node_id: String, depth: usize, direction: String, db_path: S
 }
 
 fn cmd_graph_path(from: String, to: String, max_depth: usize, db_path: String) -> Result<(), String> {
-    let store = GraphStore::new_persistent(&db_path)
+    let config = StorageConfig::new(&db_path);
+    let store = SurrealGraphStore::new_persistent_at(&db_path, &config)
         .map_err(|e| format!("Failed to open graph store: {}", e))?;
 
-    let engine = ExpansionEngine::new(store);
+    let engine = ExpansionEngine::new(Arc::new(store));
     let path = engine
         .find_path(&from, &to, max_depth)
         .map_err(|e| format!("Path find failed: {}", e))?;
@@ -868,7 +881,8 @@ fn cmd_graph_path(from: String, to: String, max_depth: usize, db_path: String) -
 }
 
 fn cmd_graph_stats(db_path: String) -> Result<(), String> {
-    let store = GraphStore::new_persistent(&db_path)
+    let config = StorageConfig::new(&db_path);
+    let store = SurrealGraphStore::new_persistent_at(&db_path, &config)
         .map_err(|e| format!("Failed to open graph store: {}", e))?;
 
     let node_count = store.count_nodes().map_err(|e| format!("Count failed: {}", e))?;

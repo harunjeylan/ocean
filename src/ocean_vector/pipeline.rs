@@ -1,9 +1,11 @@
 use std::fmt;
+use std::sync::Arc;
 use std::time::Instant;
 
 use crate::ocean_chunk::Chunk;
+use crate::ocean_storage::chunk_store::ChunkRecord;
+use crate::ocean_storage::{ChunkStore, VectorStore};
 use crate::ocean_vector::embedder::{Embedder, EmbedderError};
-use crate::ocean_vector::store::{ChunkRecord, StoreError, VectorStore};
 
 #[derive(Debug, Clone)]
 pub struct IndexConfig {
@@ -45,7 +47,7 @@ pub struct IndexReport {
 #[derive(Debug, Clone)]
 pub enum IndexError {
     Embedder(EmbedderError),
-    Store(StoreError),
+    Store(String),
 }
 
 impl fmt::Display for IndexError {
@@ -65,19 +67,14 @@ impl From<EmbedderError> for IndexError {
     }
 }
 
-impl From<StoreError> for IndexError {
-    fn from(e: StoreError) -> Self {
-        IndexError::Store(e)
-    }
-}
-
 pub struct IndexPipeline {
-    store: VectorStore,
+    store: Arc<dyn VectorStore>,
+    chunk_store: Arc<dyn ChunkStore>,
 }
 
 impl IndexPipeline {
-    pub fn new(store: VectorStore) -> Self {
-        Self { store }
+    pub fn new(store: Arc<dyn VectorStore>, chunk_store: Arc<dyn ChunkStore>) -> Self {
+        Self { store, chunk_store }
     }
 
     pub fn index_chunks(
@@ -106,7 +103,7 @@ impl IndexPipeline {
                 };
 
                 if !config.reindex {
-                    match self.store.chunk_exists(&content_hash, &config.model) {
+                    match self.chunk_store.chunk_exists(&content_hash, &config.model) {
                         Ok(true) => {
                             skipped += 1;
                             skip_indices[i] = true;
@@ -116,7 +113,7 @@ impl IndexPipeline {
                         }
                         Err(e) => {
                             failed += 1;
-                            errors.push(IndexError::Store(e));
+                            errors.push(IndexError::Store(e.to_string()));
                             skip_indices[i] = true;
                         }
                     }
@@ -143,11 +140,11 @@ impl IndexPipeline {
                         .collect();
 
                     for r in &records {
-                        match self.store.upsert_chunk(r.clone()) {
+                        match self.store.insert(r) {
                             Ok(_) => embedded += 1,
                             Err(e) => {
                                 failed += 1;
-                                errors.push(IndexError::Store(e));
+                                errors.push(IndexError::Store(e.to_string()));
                             }
                         }
                     }

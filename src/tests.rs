@@ -22,15 +22,11 @@ mod watcher_spec;
 
 #[path = "ocean_vector/embedder_test.rs"]
 mod embedder_spec;
-#[path = "ocean_vector/store_test.rs"]
-mod store_spec;
 #[path = "ocean_vector/pipeline_test.rs"]
 mod pipeline_spec;
 #[path = "ocean_vector/search_test.rs"]
 mod search_spec;
 
-#[path = "ocean_graph/store_test.rs"]
-mod graph_store_spec;
 #[path = "ocean_graph/builder_test.rs"]
 mod graph_builder_spec;
 #[path = "ocean_graph/entity_test.rs"]
@@ -44,3 +40,16 @@ mod query_types_spec;
 mod query_engine_spec;
 #[path = "ocean_query/context_test.rs"]
 mod query_context_spec;
+
+#[path = "ocean_storage/file_store_test.rs"]
+mod storage_file_store_spec;
+#[path = "ocean_storage/chunk_store_test.rs"]
+mod storage_chunk_store_spec;
+#[path = "ocean_storage/state_store_test.rs"]
+mod storage_state_store_spec;
+#[path = "ocean_storage/storage_test.rs"]
+mod storage_integration_spec;
+#[path = "ocean_storage/vector_store_test.rs"]
+mod storage_vector_store_spec;
+#[path = "ocean_storage/graph_store_test.rs"]
+mod storage_graph_store_spec;

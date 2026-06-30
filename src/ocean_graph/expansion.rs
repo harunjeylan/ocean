@@ -1,15 +1,16 @@
 use std::collections::{HashSet, VecDeque, HashMap};
+use std::sync::Arc;
 
 use crate::ocean_graph::error::GraphError;
-use crate::ocean_graph::store::GraphStore;
 use crate::ocean_graph::types::{Edge, EdgeDirection, Node, Subgraph};
+use crate::ocean_storage::graph_store::GraphStore;
 
 pub struct ExpansionEngine {
-    store: GraphStore,
+    store: Arc<dyn GraphStore>,
 }
 
 impl ExpansionEngine {
-    pub fn new(store: GraphStore) -> Self {
+    pub fn new(store: Arc<dyn GraphStore>) -> Self {
         Self { store }
     }
 

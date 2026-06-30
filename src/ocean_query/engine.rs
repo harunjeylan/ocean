@@ -1,13 +1,17 @@
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use crate::ocean_graph::expansion::ExpansionEngine;
-use crate::ocean_graph::store::GraphStore;
 use crate::ocean_query::context::ContextWindowBuilder;
 use crate::ocean_query::error::QueryError;
 use crate::ocean_query::types::*;
+use crate::ocean_storage::chunk_store::ChunkStore;
+use crate::ocean_storage::config::StorageConfig;
+use crate::ocean_storage::graph_store::GraphStore;
+use crate::ocean_storage::vector_store::VectorStore;
+use crate::ocean_storage::{SurrealChunkStore, SurrealGraphStore, SurrealVectorStore, Storage};
 use crate::ocean_vector::embedder::Embedder;
 use crate::ocean_vector::search::{parse_search_results_raw, SearchEngine, SearchResult};
-use crate::ocean_vector::store::VectorStore;
 
 #[derive(Debug, Clone)]
 enum SubQuery {
@@ -59,12 +63,39 @@ pub fn select_mode(text: &str, expand_depth: usize) -> QueryMode {
 }
 
 pub struct QueryEngine {
-    store: VectorStore,
+    store: Arc<dyn VectorStore>,
+    chunk_store: Arc<dyn ChunkStore>,
     search: SearchEngine,
     graph: Option<ExpansionEngine>,
 }
 
 impl QueryEngine {
+    pub fn from_storage(storage: Arc<dyn Storage>) -> Result<Self, QueryError> {
+        let config = StorageConfig::new(storage.storage_path());
+        let vstore: Arc<dyn VectorStore> = Arc::new(
+            SurrealVectorStore::new_persistent(&config)
+                .map_err(|e| QueryError::VectorSearchFailed(e.to_string()))?,
+        );
+        let cstore: Arc<dyn ChunkStore> = Arc::new(
+            SurrealChunkStore::new_persistent(&config)
+                .map_err(|e| QueryError::VectorSearchFailed(e.to_string()))?,
+        );
+        let gstore: Arc<dyn GraphStore> = Arc::new(
+            SurrealGraphStore::new_persistent(&config)
+                .map_err(|e| QueryError::VectorSearchFailed(e.to_string()))?,
+        );
+
+        let search = SearchEngine::new(vstore.clone());
+        let graph = Some(ExpansionEngine::new(gstore));
+
+        Ok(Self {
+            store: vstore,
+            chunk_store: cstore,
+            search,
+            graph,
+        })
+    }
+
     pub fn new(db_path: &str) -> Result<Self, QueryError> {
         Self::new_with_dimension(db_path, 768)
     }
@@ -79,21 +110,33 @@ impl QueryEngine {
         graph_path: &str,
         dimension: usize,
     ) -> Result<Self, QueryError> {
-        let store =
-            VectorStore::new_persistent(vector_path).map_err(QueryError::VectorSearchFailed)?;
-        store.initialize_schema(dimension).map_err(QueryError::VectorSearchFailed)?;
-        let search = SearchEngine::new(store.clone());
+        let vconfig = StorageConfig::new(vector_path);
+        let gconfig = StorageConfig::new(graph_path);
 
-        let graph = match GraphStore::new_persistent(graph_path) {
+        let vstore_impl = SurrealVectorStore::new_persistent_at(vector_path, &vconfig)
+            .map_err(|e| QueryError::VectorSearchFailed(e.to_string()))?;
+        vstore_impl.initialize_schema(dimension)
+            .map_err(|e| QueryError::VectorSearchFailed(e.to_string()))?;
+        let vstore: Arc<dyn VectorStore> = Arc::new(vstore_impl);
+
+        let cstore: Arc<dyn ChunkStore> = Arc::new(
+            SurrealChunkStore::new_persistent_at(vector_path)
+                .map_err(|e| QueryError::VectorSearchFailed(e.to_string()))?,
+        );
+
+        let graph = match SurrealGraphStore::new_persistent_at(graph_path, &gconfig) {
             Ok(gs) => {
                 let _ = gs.initialize_schema();
-                Some(ExpansionEngine::new(gs))
+                Some(ExpansionEngine::new(Arc::new(gs) as Arc<dyn GraphStore>))
             }
             Err(_) => None,
         };
 
+        let search = SearchEngine::new(vstore.clone());
+
         Ok(Self {
-            store,
+            store: vstore,
+            chunk_store: cstore,
             search,
             graph,
         })
@@ -104,20 +147,32 @@ impl QueryEngine {
     }
 
     pub fn new_memory_with_dimension(dimension: usize) -> Result<Self, QueryError> {
-        let store = VectorStore::new_memory().map_err(QueryError::VectorSearchFailed)?;
-        store.initialize_schema(dimension).map_err(QueryError::VectorSearchFailed)?;
-        let search = SearchEngine::new(store.clone());
+        let config = StorageConfig::new(":memory:");
 
-        let graph = match GraphStore::new_memory() {
+        let vstore_impl = SurrealVectorStore::new_memory(&config)
+            .map_err(|e| QueryError::VectorSearchFailed(e.to_string()))?;
+        vstore_impl.initialize_schema(dimension)
+            .map_err(|e| QueryError::VectorSearchFailed(e.to_string()))?;
+        let vstore: Arc<dyn VectorStore> = Arc::new(vstore_impl);
+
+        let cstore: Arc<dyn ChunkStore> = Arc::new(
+            SurrealChunkStore::new_memory()
+                .map_err(|e| QueryError::VectorSearchFailed(e.to_string()))?,
+        );
+
+        let graph = match SurrealGraphStore::new_memory(&config) {
             Ok(gs) => {
                 let _ = gs.initialize_schema();
-                Some(ExpansionEngine::new(gs))
+                Some(ExpansionEngine::new(Arc::new(gs) as Arc<dyn GraphStore>))
             }
             Err(_) => None,
         };
 
+        let search = SearchEngine::new(vstore.clone());
+
         Ok(Self {
-            store,
+            store: vstore,
+            chunk_store: cstore,
             search,
             graph,
         })
@@ -218,27 +273,11 @@ impl QueryEngine {
                 SubQuery::Vector { top_k } => {
                     let t = std::time::Instant::now();
 
-                    let results = if let Some(ref filter) = query.filter {
-                        self.search
-                            .filtered_search(&query.text, embedder, filter, *top_k)
-                    } else {
-                        self.search.search(&query.text, embedder, *top_k)
-                    };
-
+                    let results = self.search.search(&query.text, embedder, *top_k);
                     vector_results = match results {
                         Ok(r) => r,
                         Err(e) => {
-                            return Err(match e {
-                                crate::ocean_vector::search::SearchError::Store(s) => {
-                                    QueryError::VectorSearchFailed(s)
-                                }
-                                crate::ocean_vector::search::SearchError::Embedder(em) => {
-                                    QueryError::EmbeddingFailed(em)
-                                }
-                                crate::ocean_vector::search::SearchError::NoResults(_) => {
-                                    QueryError::NoResults
-                                }
-                            })
+                            return Err(QueryError::VectorSearchFailed(e.to_string()));
                         }
                     };
                     vector_time = t.elapsed().as_millis() as u64;
@@ -360,7 +399,7 @@ impl QueryEngine {
         let total = ranked.len();
 
         let context_windows = if query.include_context {
-            let builder = ContextWindowBuilder::new(self.store.clone());
+            let builder = ContextWindowBuilder::new(self.chunk_store.clone());
             let n = query.context_chunks.max(1).min(10);
             let mut windows = Vec::new();
             for chunk in &ranked {

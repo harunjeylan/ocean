@@ -30,3 +30,9 @@ impl From<surrealdb::Error> for GraphError {
         GraphError::StoreError(e.to_string())
     }
 }
+
+impl From<crate::ocean_storage::error::StorageError> for GraphError {
+    fn from(e: crate::ocean_storage::error::StorageError) -> Self {
+        GraphError::StoreError(e.to_string())
+    }
+}

@@ -5,6 +5,7 @@ pub mod ocean_chunk;
 pub mod ocean_vector;
 pub mod ocean_graph;
 pub mod ocean_query;
+pub mod ocean_storage;
 
 #[cfg(test)]
 mod tests;

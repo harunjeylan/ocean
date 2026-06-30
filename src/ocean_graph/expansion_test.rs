@@ -1,8 +1,16 @@
 use crate::ocean_graph::expansion::ExpansionEngine;
-use crate::ocean_graph::store::GraphStore;
 use crate::ocean_graph::types::{Edge, EdgeDirection, Node, NodeType, RelationType};
+use crate::ocean_storage::config::StorageConfig;
+use crate::ocean_storage::graph_store::GraphStore;
+use crate::ocean_storage::SurrealGraphStore;
+use std::sync::Arc;
 
-fn build_small_graph(store: &GraphStore) {
+fn init_store() -> Arc<SurrealGraphStore> {
+    let config = StorageConfig::new(":memory:");
+    Arc::new(SurrealGraphStore::new_memory(&config).unwrap())
+}
+
+fn build_small_graph(store: &SurrealGraphStore) {
     store.initialize_schema().unwrap();
 
     store.insert_nodes_batch(vec![
@@ -25,7 +33,7 @@ fn build_small_graph(store: &GraphStore) {
 
 #[test]
 fn test_expand_depth_1() {
-    let store = GraphStore::new_memory().unwrap();
+    let store = init_store();
     build_small_graph(&store);
     let engine = ExpansionEngine::new(store);
 
@@ -36,7 +44,7 @@ fn test_expand_depth_1() {
 
 #[test]
 fn test_expand_depth_2() {
-    let store = GraphStore::new_memory().unwrap();
+    let store = init_store();
     build_small_graph(&store);
     let engine = ExpansionEngine::new(store);
 
@@ -47,7 +55,7 @@ fn test_expand_depth_2() {
 
 #[test]
 fn test_expand_deduplication() {
-    let store = GraphStore::new_memory().unwrap();
+    let store = init_store();
     build_small_graph(&store);
     let engine = ExpansionEngine::new(store);
 
@@ -61,7 +69,7 @@ fn test_expand_deduplication() {
 
 #[test]
 fn test_expand_invalid_depth() {
-    let store = GraphStore::new_memory().unwrap();
+    let store = init_store();
     store.initialize_schema().unwrap();
     let engine = ExpansionEngine::new(store);
 
@@ -74,7 +82,7 @@ fn test_expand_invalid_depth() {
 
 #[test]
 fn test_expand_nonexistent_node() {
-    let store = GraphStore::new_memory().unwrap();
+    let store = init_store();
     store.initialize_schema().unwrap();
     let engine = ExpansionEngine::new(store);
 
@@ -84,7 +92,7 @@ fn test_expand_nonexistent_node() {
 
 #[test]
 fn test_find_path() {
-    let store = GraphStore::new_memory().unwrap();
+    let store = init_store();
     build_small_graph(&store);
     let engine = ExpansionEngine::new(store);
 
@@ -96,7 +104,7 @@ fn test_find_path() {
 
 #[test]
 fn test_find_path_disconnected() {
-    let store = GraphStore::new_memory().unwrap();
+    let store = init_store();
     store.initialize_schema().unwrap();
 
     store.insert_nodes_batch(vec![
@@ -111,11 +119,11 @@ fn test_find_path_disconnected() {
 
 #[test]
 fn test_find_path_same_node() {
-    let store = GraphStore::new_memory().unwrap();
+    let store = init_store();
     store.initialize_schema().unwrap();
 
     store.insert_node(
-        Node { id: "n1".into(), node_type: NodeType::Chunk, ref_id: "n1".into(), label: None },
+        &Node { id: "n1".into(), node_type: NodeType::Chunk, ref_id: "n1".into(), label: None },
         "f1",
     ).unwrap();
 
@@ -127,7 +135,7 @@ fn test_find_path_same_node() {
 
 #[test]
 fn test_get_file_graph() {
-    let store = GraphStore::new_memory().unwrap();
+    let store = init_store();
     build_small_graph(&store);
     let engine = ExpansionEngine::new(store);
 
@@ -139,7 +147,7 @@ fn test_get_file_graph() {
 
 #[test]
 fn test_cycle_safety() {
-    let store = GraphStore::new_memory().unwrap();
+    let store = init_store();
     store.initialize_schema().unwrap();
 
     store.insert_nodes_batch(vec![

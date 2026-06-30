@@ -5761,3 +5761,125 @@ You now have:
 ---
 
 # END OF FULL ARCHITECTURE
+
+---
+
+# PHASE 7 — STORAGE LAYER (ocean-storage)
+
+**Status:** Spec complete — `.specs/ocean-storage/` created. Implementation pending (12 tasks).
+
+## Purpose
+
+Phase 7 formalises the SurrealDB-backed persistence layer into a standalone `ocean_storage` module with a unified `Storage` trait, five sub-store traits (FileStore, ChunkStore, VectorStore, GraphStore, StateStore), application-level transaction support, and file/state tracking for incremental indexing. It wraps the existing `ocean_vector::store::VectorStore` and `ocean_graph::store::GraphStore` without breaking backwards compatibility.
+
+## Key Changes
+
+- **Unified `Storage` trait**: Master interface with accessors `files()`, `chunks()`, `vectors()`, `graph()`, `state()` and `begin_transaction`/`commit`/`rollback`
+- **Five sub-store traits**: `FileStore` (file metadata), `ChunkStore` (chunks), `VectorStore` (embeddings+search), `GraphStore` (nodes+edges), `StateStore` (indexing state)
+- **Separate SurrealKv directories per sub-store**: Prevents revision collisions by using `{storage}/files.db`, `{storage}/chunks.db`, `{storage}/vectors.db`, `{storage}/graph.db`, `{storage}/state.db`
+- **File metadata tracking**: New `FileMeta` struct + `FileStore` trait enables change detection via `needs_update()`
+- **Indexing state tracking**: New `StateStore` maps `file_id` → `(hash, last_indexed, status)` for incremental indexing and crash recovery
+- **Application-level transactions**: Staging buffer written on `commit()`, discarded on `rollback()`; partial failures mark files as `Failed` for recovery
+- **Shared single `tokio::runtime::Runtime`**: All five sub-stores share one runtime, reducing thread overhead
+- **Backwards compatibility**: Existing `VectorStore`/`GraphStore` unchanged; `QueryEngine` and `IndexPipeline` gain optional `Storage`-based constructors
+
+## Architecture
+
+```text
+src/ocean_storage/
+├── mod.rs              — Storage trait, SurrealStorage, re-exports
+├── error.rs            — StorageError enum
+├── config.rs           — StorageConfig, path resolution
+├── file_store.rs       — FileStore trait + FileMeta
+├── chunk_store.rs      — ChunkStore trait
+├── vector_store.rs     — VectorStore trait
+├── graph_store.rs      — GraphStore trait
+├── state_store.rs      — StateStore trait + IndexStatus + StateRecord
+├── transaction.rs      — TransactionStaging + StagedWrite
+├── file_store_impl.rs  — SurrealFileStore
+├── chunk_store_impl.rs — SurrealChunkStore
+├── vector_store_impl.rs— SurrealVectorStore (wraps ocean_vector::store)
+├── graph_store_impl.rs — SurrealGraphStore (wraps ocean_graph::store)
+└── state_store_impl.rs — SurrealStateStore
+
+Storage trait (unified interface)
+  ├── files()    → FileStore    → SurrealFileStore    (SurrealKv: storage/files.db)
+  ├── chunks()   → ChunkStore   → SurrealChunkStore   (SurrealKv: storage/chunks.db)
+  ├── vectors()  → VectorStore  → SurrealVectorStore  (SurrealKv: storage/vectors.db)
+  ├── graph()    → GraphStore   → SurrealGraphStore   (SurrealKv: storage/graph.db)
+  └── state()    → StateStore   → SurrealStateStore   (SurrealKv: storage/state.db)
+```
+
+## Integration
+
+- `ocean index` uses `Storage::state().needs_update()` to skip unchanged files; uses `Storage::chunks()`, `Storage::vectors()`, `Storage::graph()` for writes
+- `ocean query` uses `Storage` sub-stores for vector search, FTS, graph expansion, and context building
+- `ocean info` displays aggregated storage stats via `Storage::count_all()`
+- The `--storage-path` CLI flag accepts a base directory; default is `~/.ocean/store/{cwd}/`
+
+## Specs
+
+See `.specs/ocean-storage/` for requirements (8 requirements, R1–R8), design (5 sub-store traits + Storage trait + transaction model + 5 correctness properties), and tasks (12 implementation tasks + validation).
+
+---
+
+# END OF PHASE 7
+
+---
+
+# PHASE 8 — INDEX ORCHESTRATOR (ocean-index)
+
+**Status:** Spec complete — `.specs/ocean-index/` created. Implementation pending (10 tasks).
+
+## Purpose
+
+Phase 8 extracts indexing orchestration logic into a dedicated `ocean_index` module with a formal `IndexOrchestrator` struct, state-driven incremental indexing via `StateStore`, atomic per-file processing (parse → chunk → embed → graph → store), progress reporting abstraction, and three pipeline modes (Full, Incremental, Watch). It moves orchestration logic out of CLI handlers and pipelines into a single, testable controller.
+
+## Key Changes
+
+- **Dedicated `ocean_index` module**: New `src/ocean_index/` module with `IndexOrchestrator`, `FileProcessor`, progress reporting, and report types — registered in `lib.rs` alongside existing modules
+- **Three pipeline modes**: `IndexMode::Full` (reindex all), `IndexMode::Incremental` (skip unchanged files via StateStore hash comparison), `IndexMode::Watch` (continuous monitoring)
+- **State-driven incremental indexing**: Queries `StateStore::get_state()` before each file; skips if hash matches; updates state to `Indexed`/`Failed` after processing
+- **`FileProcessor` per-file pipeline**: Self-contained processor running parse → chunk → embed → graph → store → state for one file, with typed intermediate results and error isolation
+- **`ProgressReporter` trait**: Decouples progress output from orchestration — `ConsoleReporter` (preserves existing CLI format), `SilentReporter` (for tests/programmatic use)
+- **`IndexReport` output**: Structured report with file-level results (indexed/skipped/failed counts, chunks, edges, timing) returned from `run()`
+- **Retry logic for transient errors**: Exponential backoff (100ms, 500ms, 2s, max 3 retries) for transient embedder/storage errors
+- **CLI refactoring**: `cmd_index` delegates to `IndexOrchestrator::run()` instead of implementing the loop inline; `--watch` flag maps to Watch mode
+- **Backwards compatibility**: `IndexPipeline` in `ocean_vector` remains unchanged; existing consumers continue to work
+
+## Architecture
+
+```text
+CLI: ocean index ./docs [--reindex] [--watch]
+         │
+         ▼
+   IndexOrchestrator::run(config)
+         │
+         ├── scan directory
+         ├── filter by IndexMode + StateStore
+         ├── for each file:
+         │     └── FileProcessor::process(file)
+         │            ├── parse     (ocean_parser::read_all_blocks)
+         │            ├── chunk     (ocean_chunk::chunker::chunk)
+         │            ├── embed     (IndexPipeline::index_chunks)
+         │            ├── graph     (GraphBuilder::from_chunks)
+         │            ├── store     (ocean_storage sub-stores)
+         │            └── state     (StateStore::update_state)
+         │
+         └── return IndexReport
+
+Events emitted: ScanStarted → FileProcessing → FileComplete|FileFailed|FileSkipped → IndexComplete
+```
+
+## Integration
+
+- `ocean index` CLI command creates `IndexOrchestrator` with storage, embedder, and `ConsoleReporter`, then calls `run(config)`
+- `StateStore` integration provides incremental indexing: files with matching hash are skipped
+- `IndexPipeline` remains the embed+store engine, called by `FileProcessor`
+- `GraphBuilder` remains the graph construction engine, called by `FileProcessor`
+- The `--reindex` flag maps to `IndexMode::Full`; the default (no flag) maps to `IndexMode::Incremental`
+- The `--watch` flag maps to `IndexMode::Watch` (continuous monitoring after initial pass)
+
+## Specs
+
+See `.specs/ocean-index/` for requirements (9 requirements, R1–R9), design (IndexOrchestrator + FileProcessor + ProgressReporter + 5 correctness properties), and tasks (10 implementation tasks + validation).

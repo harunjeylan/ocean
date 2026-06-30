@@ -1,7 +1,6 @@
 use crate::ocean_query::engine::{select_mode, QueryEngine};
 use crate::ocean_query::types::*;
 use crate::ocean_vector::embedder::Embedder;
-use crate::ocean_vector::store::VectorStore;
 
 struct TestEmbedder;
 
@@ -117,10 +116,6 @@ fn query_no_results() {
 #[test]
 fn query_vector_mode() {
     let engine = QueryEngine::new_memory().expect("failed to create memory engine");
-    let _store_clone = VectorStore::new_memory().expect("failed to create store");
-    // manually insert a chunk for the store used by engine
-    // Note: engine has its own store via clone, so we need to use the same store
-    // This is a simplified test that checks the error type for empty store
     let q = Query {
         text: "test query".into(),
         mode: QueryMode::Vector,

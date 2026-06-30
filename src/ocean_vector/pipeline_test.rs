@@ -1,7 +1,10 @@
 use crate::ocean_chunk::{Chunk, ChunkType};
 use super::embedder_spec::MockEmbedder;
+use crate::ocean_storage::config::StorageConfig;
+use crate::ocean_storage::SurrealVectorStore;
+use crate::ocean_storage::vector_store::VectorStore;
 use crate::ocean_vector::pipeline::*;
-use crate::ocean_vector::store::VectorStore;
+use std::sync::Arc;
 
 fn make_chunk(id: &str, content: &str) -> Chunk {
     Chunk {
@@ -18,13 +21,17 @@ fn make_chunk(id: &str, content: &str) -> Chunk {
     }
 }
 
+fn init_pipeline() -> IndexPipeline {
+    let config = StorageConfig::new(":memory:");
+    let store = Arc::new(SurrealVectorStore::new_memory(&config).unwrap());
+    store.initialize_schema(4).unwrap();
+    IndexPipeline::new(store.clone(), store)
+}
+
 #[test]
 fn test_pipeline_index_chunks() {
-    let store = VectorStore::new_memory().unwrap();
-    store.initialize_schema(4).unwrap();
-
     let embedder = MockEmbedder::new(4, "mock-model");
-    let pipeline = IndexPipeline::new(store);
+    let pipeline = init_pipeline();
 
     let chunks = vec![
         make_chunk("p1", "first chunk content"),
@@ -49,11 +56,8 @@ fn test_pipeline_index_chunks() {
 
 #[test]
 fn test_pipeline_idempotent_skip() {
-    let store = VectorStore::new_memory().unwrap();
-    store.initialize_schema(4).unwrap();
-
     let embedder = MockEmbedder::new(4, "mock-model");
-    let pipeline = IndexPipeline::new(store);
+    let pipeline = init_pipeline();
 
     let chunks = vec![make_chunk("p-idem", "idempotent test")];
 
@@ -76,11 +80,8 @@ fn test_pipeline_idempotent_skip() {
 
 #[test]
 fn test_pipeline_reindex_flag() {
-    let store = VectorStore::new_memory().unwrap();
-    store.initialize_schema(4).unwrap();
-
     let embedder = MockEmbedder::new(4, "mock-model");
-    let pipeline = IndexPipeline::new(store);
+    let pipeline = init_pipeline();
 
     let chunks = vec![make_chunk("p-rei", "reindex test")];
 
@@ -102,11 +103,8 @@ fn test_pipeline_reindex_flag() {
 
 #[test]
 fn test_pipeline_empty_chunks() {
-    let store = VectorStore::new_memory().unwrap();
-    store.initialize_schema(4).unwrap();
-
     let embedder = MockEmbedder::new(4, "mock-model");
-    let pipeline = IndexPipeline::new(store);
+    let pipeline = init_pipeline();
 
     let config = IndexConfig::default();
     let report = pipeline.index_chunks(vec![], &embedder, &config).unwrap();

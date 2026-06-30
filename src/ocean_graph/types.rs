@@ -1,48 +1,6 @@
-use serde::{Deserialize, Serialize};
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub enum NodeType {
-    File,
-    Chunk,
-    Heading,
-    Entity,
-    Folder,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub enum RelationType {
-    Contains,
-    References,
-    Mentions,
-    BelongsTo,
-    DerivedFrom,
-    SimilarTo,
-    CrossReference,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub enum EdgeDirection {
-    Forward,
-    Backward,
-    Both,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct Node {
-    pub id: String,
-    pub node_type: NodeType,
-    pub ref_id: String,
-    pub label: Option<String>,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct Edge {
-    pub from: String,
-    pub to: String,
-    pub relation: RelationType,
-    pub weight: f32,
-    pub metadata: Option<String>,
-}
+pub use crate::ocean_storage::graph_store::{
+    Edge, EdgeDirection, Node, NodeType, RelationType,
+};
 
 #[derive(Debug, Clone)]
 pub struct Subgraph {

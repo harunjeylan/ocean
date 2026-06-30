@@ -1,10 +1,11 @@
 use std::collections::HashMap;
 use std::fmt;
+use std::sync::Arc;
 
 use crate::ocean_graph::expansion::ExpansionEngine;
 use crate::ocean_graph::types::EdgeDirection;
+use crate::ocean_storage::VectorStore as OceanVectorStore;
 use crate::ocean_vector::embedder::{Embedder, EmbedderError};
-use crate::ocean_vector::store::{StoreError, VectorStore};
 
 #[derive(Debug, Clone)]
 pub struct SearchResult {
@@ -89,7 +90,7 @@ impl SearchFilter {
 #[derive(Debug, Clone)]
 pub enum SearchError {
     Embedder(EmbedderError),
-    Store(StoreError),
+    Store(String),
     NoResults(String),
 }
 
@@ -97,7 +98,7 @@ impl fmt::Display for SearchError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             SearchError::Embedder(e) => write!(f, "embedder error: {}", e),
-            SearchError::Store(e) => write!(f, "store error: {}", e),
+            SearchError::Store(msg) => write!(f, "store error: {}", msg),
             SearchError::NoResults(msg) => write!(f, "no results: {}", msg),
         }
     }
@@ -111,18 +112,18 @@ impl From<EmbedderError> for SearchError {
     }
 }
 
-impl From<StoreError> for SearchError {
-    fn from(e: StoreError) -> Self {
-        SearchError::Store(e)
+impl From<crate::ocean_storage::error::StorageError> for SearchError {
+    fn from(e: crate::ocean_storage::error::StorageError) -> Self {
+        SearchError::Store(e.to_string())
     }
 }
 
 pub struct SearchEngine {
-    store: VectorStore,
+    store: Arc<dyn OceanVectorStore>,
 }
 
 impl SearchEngine {
-    pub fn new(store: VectorStore) -> Self {
+    pub fn new(store: Arc<dyn OceanVectorStore>) -> Self {
         Self { store }
     }
 

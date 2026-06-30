@@ -4,7 +4,6 @@ pub mod hasher;
 pub mod scanner;
 pub mod filter;
 pub mod normalizer;
-pub mod path_entities;
 pub mod path_resolver;
 pub mod watcher;
 

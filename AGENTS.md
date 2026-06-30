@@ -14,7 +14,7 @@
 
 ## Module: ocean_fs (Phase 1)
 - **File identity**: UUIDv7 (`uuid::Uuid::now_v7()`) via `generate_file_id()` in `types.rs`
-- **Persistence**: SeaORM + SQLite (via sqlx-sqlite, runtime-tokio). `PathResolver` wraps internal `tokio::runtime::Runtime` for sync-to-async bridging.
+- **Persistence**: SurrealDB (embedded RocksDb/in-memory). `PathResolver` wraps internal `tokio::runtime::Runtime` for sync-to-async bridging.
 - **Scanner**: `walkdir` + `rayon` parallel. `WalkDir::filter_entry` for directory filtering, then separate file-level filters.
 - **Hasher**: streaming SHA-256 with 64KB buffer, rejects files >4GB.
 - **Watcher**: `notify` + `crossbeam_channel`. 100ms debounce, MAX_BATCH_SIZE=100.
@@ -68,6 +68,8 @@
 - `verify <file> <hash>` — check file hash, prints true/false
 - `watch <dir>` — monitor directory for file changes (Ctrl+C to stop)
 - `chunk <file> [--min-size] [--max-size] [--overlap] [--include-images] [--rows-per-chunk]` — semantic chunking
+- `index <dir> [--model] [--provider] [--ollama-url] [--openai-key] [--anthropic-key] [--gemini-key] [--db-path] [--batch-size] [--reindex]` — scan, parse, chunk, embed, and store in SurrealDB
+- `vector-search <query> [--top-k] [--hybrid] [--file-id] [--heading] [--block-type] [--model] [--provider] [--ollama-url] [--openai-key] [--anthropic-key] [--gemini-key] [--db-path]` — semantic vector search over indexed documents
 
 ### Skip/take slicing
 - `--skip <N>` — skip N units from start (pages for PDF/DOCX, slides for PPTX, lines for TXT/MD, paragraphs for HTML, sheets for XLSX)
@@ -75,9 +77,19 @@
 - Implemented in all 7 backends
 - DOCX uses `<w:br w:type="page"/>` detection for page-level slicing
 
+## Module: ocean_vector (Phase 4)
+- **Embedder trait**: `Embedder` with `embed()`, `embed_batch()`, `dimension()`, `model_name()` — auto-normalizes to unit length
+- **Backends**: `OllamaEmbedder` (local, `POST /api/embed`), `OpenAIEmbedder` (OpenAI-compatible), `AnthropicEmbedder` (x-api-key auth), `GeminiEmbedder` (Google Generative Language API)
+- **VectorStore**: SurrealDB-backed (in-memory for tests, SurrealKv for persistence). Schema: `chunk` table with HNSW index on `embedding` field. Methods: `insert_chunk`, `upsert_chunk`, `insert_chunks_batch`, `get_chunk`, `delete_chunks_by_file`, `count`, `chunk_exists`, `vector_search`, `fts_search`
+- **IndexPipeline**: `index_chunks(chunks, embedder, config)` — batches, dedup by content_hash (unless `reindex: true`), produces `IndexReport`
+- **SearchEngine**: `search()` (KNN), `hybrid_search()` (vector + FTS with RRF fusion, k=60), `filtered_search()`, `hybrid_filtered_search()`
+- **SearchFilter**: builder pattern with `file_id`, `heading_prefix`, `block_type`, `created_after`/`created_before`
+- **Error types**: `EmbedderError`, `StoreError`, `IndexError`, `SearchError` — all implement `Display` + `Error`
+- **MockEmbedder** in tests: returns deterministic unit vectors of configurable dimension
+
 ## Commands
 ```
-cargo test                         # all (124 lib/bin/integration tests)
+cargo test                         # all (160 lib/bin/integration tests)
 cargo test --lib                   # unit tests only (ocean_fs + ocean_parser + ocean_chunk)
 cargo test --test fs_integration   # ocean_fs integration
 cargo test --test parser_integration   # ocean_parser integration

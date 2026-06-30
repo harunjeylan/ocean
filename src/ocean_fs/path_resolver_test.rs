@@ -84,7 +84,7 @@ fn test_history_of_unknown_id() {
 #[test]
 fn test_database_creation() {
     let dir = tempdir().unwrap();
-    let db_path = dir.path().join("test_paths.db");
+    let db_path = dir.path().join("test_paths");
     let db_str = db_path.to_str().unwrap();
 
     let resolver = PathResolver::new(db_str).unwrap();

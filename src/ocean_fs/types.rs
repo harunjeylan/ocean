@@ -72,12 +72,12 @@ pub struct NormalizedFile {
     pub category: FileCategory,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct PathMove {
     pub file_id: FileId,
     pub old_path: String,
     pub new_path: String,
-    pub timestamp: u64,
+    pub timestamp: i64,
 }
 
 #[derive(Debug, Clone)]

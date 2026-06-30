@@ -5,11 +5,12 @@ use std::sync::Arc;
 use clap::Parser;
 
 use crate::ocean_chunk::*;
-use crate::ocean_cli::args::{ChunkArgs, Cli, Commands, ReadArgs};
+use crate::ocean_cli::args::{ChunkArgs, Cli, Commands, IndexArgs, ReadArgs, VectorSearchArgs};
 use crate::ocean_cli::display::*;
 use crate::ocean_cli::walk::*;
 use crate::ocean_fs::*;
 use crate::ocean_parser::*;
+use crate::ocean_vector::*;
 
 pub fn run() -> Result<(), String> {
     let cli = Cli::parse();
@@ -27,6 +28,8 @@ pub fn run() -> Result<(), String> {
         Commands::Verify { file, hash } => cmd_verify(file, hash),
         Commands::Watch { dir } => cmd_watch(dir),
         Commands::Chunk(args) => cmd_chunk(args),
+        Commands::Index(args) => cmd_index(args),
+        Commands::VectorSearch(args) => cmd_vector_search(args),
     }
 }
 
@@ -245,6 +248,232 @@ fn cmd_watch(dir: String) -> Result<(), String> {
     }
 
     watcher.unwatch(handle).map_err(|e| format!("Unwatch failed: {}", e))
+}
+
+fn create_embedder(
+    provider: &str,
+    model: &str,
+    ollama_url: &str,
+    openai_key: Option<&str>,
+    openai_url: Option<&str>,
+    anthropic_key: Option<&str>,
+    anthropic_url: Option<&str>,
+    gemini_key: Option<&str>,
+) -> Result<Box<dyn Embedder>, String> {
+    match provider {
+        "ollama" => {
+            Ok(Box::new(
+                OllamaEmbedder::new(model, ollama_url)
+                    .map_err(|e| format!("Failed to create Ollama embedder: {}", e))?,
+            ))
+        }
+        "openai" => {
+            let key = openai_key.ok_or_else(|| "--openai-key is required for openai provider")?;
+            let url = openai_url.unwrap_or("https://api.openai.com/v1");
+            Ok(Box::new(
+                OpenAIEmbedder::new(model, url, key)
+                    .map_err(|e| format!("Failed to create OpenAI embedder: {}", e))?,
+            ))
+        }
+        "anthropic" => {
+            let key = anthropic_key.ok_or_else(|| "--anthropic-key is required for anthropic provider")?;
+            let url = anthropic_url.unwrap_or("https://api.anthropic.com/v1");
+            Ok(Box::new(
+                AnthropicEmbedder::new(model, url, key)
+                    .map_err(|e| format!("Failed to create Anthropic embedder: {}", e))?,
+            ))
+        }
+        "gemini" => {
+            let key = gemini_key.ok_or_else(|| "--gemini-key is required for gemini provider")?;
+            Ok(Box::new(
+                GeminiEmbedder::new(model, key)
+                    .map_err(|e| format!("Failed to create Gemini embedder: {}", e))?,
+            ))
+        }
+        other => Err(format!("unsupported provider '{}'. Use: ollama, openai, anthropic, gemini", other)),
+    }
+}
+
+fn cmd_index(args: IndexArgs) -> Result<(), String> {
+    let dir_path = std::path::PathBuf::from(&args.dir);
+    if !dir_path.is_dir() {
+        return Err(format!("directory not found: {}", args.dir));
+    }
+
+    let files = walk_supported_files(&dir_path);
+    if files.is_empty() {
+        println!("No supported documents found in '{}'.", args.dir);
+        return Ok(());
+    }
+    println!("Found {} supported file(s) in '{}'. Indexing...", files.len(), args.dir);
+
+    let store = VectorStore::new_persistent(&args.db_path)
+        .map_err(|e| format!("Failed to open store: {}", e))?;
+    let dim = match args.provider.as_str() {
+        "openai" if args.model.contains("large") => 3072,
+        "openai" if args.model.contains("small") => 1536,
+        _ => 768,
+    };
+    store.initialize_schema(dim)
+        .map_err(|e| format!("Failed to init schema: {}", e))?;
+
+    let embedder = create_embedder(&args.provider, &args.model, &args.ollama_url,
+        args.openai_key.as_deref(), args.openai_url.as_deref(),
+        args.anthropic_key.as_deref(), args.anthropic_url.as_deref(),
+        args.gemini_key.as_deref())?;
+
+    let pipeline = IndexPipeline::new(store);
+
+    let config = IndexConfig {
+        batch_size: args.batch_size,
+        reindex: args.reindex,
+        model: args.model.clone(),
+        dimension: embedder.dimension(),
+        ollama_url: Some(args.ollama_url.clone()),
+        openai_api_key: args.openai_key.clone(),
+        db_path: args.db_path.clone(),
+    };
+
+    let file_count = files.len();
+    for (i, path) in files.iter().enumerate() {
+        let name = path.to_string_lossy();
+        println!("[{}/{}] Processing: {}", i + 1, file_count, name);
+
+        let doc = match open(&name) {
+            Ok(d) => d,
+            Err(e) => {
+                println!("  Skipping (open failed: {})", e);
+                continue;
+            }
+        };
+
+        let blocks = match read_all_blocks(&*doc) {
+            Ok(b) => b,
+            Err(e) => {
+                println!("  Skipping (read failed: {})", e);
+                continue;
+            }
+        };
+
+        let chunk_config = ChunkConfig {
+            min_tokens: 100,
+            max_tokens: 800,
+            overlap_sentences: 1,
+            include_images: false,
+            rows_per_sheet_chunk: 50,
+            token_estimator: None,
+        };
+
+        let file_id = generate_file_id();
+        let chunks = match crate::ocean_chunk::chunk(blocks, &file_id, Some(chunk_config)) {
+            Ok(c) => c,
+            Err(e) => {
+                println!("  Skipping (chunk failed: {})", e);
+                continue;
+            }
+        };
+
+        if chunks.is_empty() {
+            println!("  No chunks produced.");
+            continue;
+        }
+
+        match pipeline.index_chunks(chunks, &*embedder, &config) {
+            Ok(report) => {
+                println!(
+                    "  Indexed: {} embedded, {} skipped, {} failed ({}ms)",
+                    report.embedded, report.skipped, report.failed, report.duration_ms
+                );
+            }
+            Err(e) => {
+                println!("  Index error: {}", e);
+            }
+        }
+    }
+
+    println!("Indexing complete.");
+    Ok(())
+}
+
+fn cmd_vector_search(args: VectorSearchArgs) -> Result<(), String> {
+    let store = VectorStore::new_persistent(&args.db_path)
+        .map_err(|e| format!("Failed to open store: {}", e))?;
+    let engine = SearchEngine::new(store);
+
+    let embedder = create_embedder(&args.provider, &args.model, &args.ollama_url,
+        args.openai_key.as_deref(), args.openai_url.as_deref(),
+        args.anthropic_key.as_deref(), args.anthropic_url.as_deref(),
+        args.gemini_key.as_deref())?;
+
+    let results = if args.hybrid {
+        let mut filter = SearchFilter::new();
+        if let Some(ref fid) = args.file_id {
+            filter = filter.with_file_id(fid);
+        }
+        if let Some(ref h) = args.heading {
+            filter = filter.with_heading(h);
+        }
+        if let Some(ref bt) = args.block_type {
+            filter = filter.with_block_type(bt);
+        }
+
+        if filter.file_id.is_some() || filter.heading_prefix.is_some() || filter.block_type.is_some() {
+            engine.hybrid_filtered_search(&args.query, &*embedder, &filter, args.top_k)
+        } else {
+            engine.hybrid_search(&args.query, &*embedder, args.top_k)
+        }
+    } else {
+        let mut filter = SearchFilter::new();
+        if let Some(ref fid) = args.file_id {
+            filter = filter.with_file_id(fid);
+        }
+        if let Some(ref h) = args.heading {
+            filter = filter.with_heading(h);
+        }
+        if let Some(ref bt) = args.block_type {
+            filter = filter.with_block_type(bt);
+        }
+
+        if filter.file_id.is_some() || filter.heading_prefix.is_some() || filter.block_type.is_some() {
+            engine.filtered_search(&args.query, &*embedder, &filter, args.top_k)
+        } else {
+            engine.search(&args.query, &*embedder, args.top_k)
+        }
+    };
+
+    match results {
+        Ok(results) => {
+            if results.is_empty() {
+                println!("No results found.");
+            } else {
+                println!("Top {} results for '{}':", results.len(), args.query);
+                for (i, r) in results.iter().enumerate() {
+                    let content_short = if r.content.len() > 120 {
+                        format!("{}...", &r.content[..120])
+                    } else {
+                        r.content.clone()
+                    };
+                    let heading = r.heading.as_deref().unwrap_or("(none)");
+                    let score_info = if let (Some(vs), Some(fs)) = (r.vector_score, r.fts_score) {
+                        format!("score={:.4} (vec={:.4}, fts={:.4})", r.score, vs, fs)
+                    } else {
+                        format!("score={:.4}", r.score)
+                    };
+                    println!(
+                        "  {}. {}  file={}  heading=\"{}\"",
+                        i + 1,
+                        score_info,
+                        &r.file_id[..8],
+                        heading,
+                    );
+                    println!("     \"{}\"", content_short);
+                }
+            }
+        }
+        Err(e) => return Err(format!("Search failed: {}", e)),
+    }
+
+    Ok(())
 }
 
 fn cmd_chunk(args: ChunkArgs) -> Result<(), String> {

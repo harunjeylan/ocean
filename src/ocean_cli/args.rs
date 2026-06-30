@@ -1,4 +1,4 @@
-use clap::{Parser, Subcommand, Args};
+use clap::{Args, Parser, Subcommand};
 
 #[derive(Parser)]
 #[command(name = "ocean", version, about = "Document runtime — inspect, search, and manage documents")]
@@ -21,6 +21,8 @@ pub enum Commands {
     Verify { file: String, hash: String },
     Watch { dir: String },
     Chunk(ChunkArgs),
+    Index(IndexArgs),
+    VectorSearch(VectorSearchArgs),
 }
 
 #[derive(Args)]
@@ -63,4 +65,64 @@ pub struct ChunkArgs {
     pub include_images: bool,
     #[arg(long, default_value = "50")]
     pub rows_per_chunk: usize,
+}
+
+#[derive(Args)]
+pub struct IndexArgs {
+    pub dir: String,
+    #[arg(long, default_value = "nomic-embed-text")]
+    pub model: String,
+    #[arg(long, default_value = "ollama")]
+    pub provider: String,
+    #[arg(long, default_value = "http://localhost:11434")]
+    pub ollama_url: String,
+    #[arg(long)]
+    pub openai_key: Option<String>,
+    #[arg(long)]
+    pub openai_url: Option<String>,
+    #[arg(long)]
+    pub anthropic_key: Option<String>,
+    #[arg(long)]
+    pub anthropic_url: Option<String>,
+    #[arg(long)]
+    pub gemini_key: Option<String>,
+    #[arg(long, default_value = "ocean.db")]
+    pub db_path: String,
+    #[arg(long, default_value_t = 10)]
+    pub batch_size: usize,
+    #[arg(long)]
+    pub reindex: bool,
+}
+
+#[derive(Args)]
+pub struct VectorSearchArgs {
+    pub query: String,
+    #[arg(long, default_value_t = 10)]
+    pub top_k: usize,
+    #[arg(long)]
+    pub hybrid: bool,
+    #[arg(long)]
+    pub file_id: Option<String>,
+    #[arg(long)]
+    pub heading: Option<String>,
+    #[arg(long)]
+    pub block_type: Option<String>,
+    #[arg(long, default_value = "nomic-embed-text")]
+    pub model: String,
+    #[arg(long, default_value = "ollama")]
+    pub provider: String,
+    #[arg(long, default_value = "http://localhost:11434")]
+    pub ollama_url: String,
+    #[arg(long)]
+    pub openai_key: Option<String>,
+    #[arg(long)]
+    pub openai_url: Option<String>,
+    #[arg(long)]
+    pub anthropic_key: Option<String>,
+    #[arg(long)]
+    pub anthropic_url: Option<String>,
+    #[arg(long)]
+    pub gemini_key: Option<String>,
+    #[arg(long, default_value = "ocean.db")]
+    pub db_path: String,
 }

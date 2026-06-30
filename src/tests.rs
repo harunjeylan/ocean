@@ -19,3 +19,12 @@ mod path_resolver_spec;
 mod scanner_spec;
 #[path = "ocean_fs/watcher_test.rs"]
 mod watcher_spec;
+
+#[path = "ocean_vector/embedder_test.rs"]
+mod embedder_spec;
+#[path = "ocean_vector/store_test.rs"]
+mod store_spec;
+#[path = "ocean_vector/pipeline_test.rs"]
+mod pipeline_spec;
+#[path = "ocean_vector/search_test.rs"]
+mod search_spec;

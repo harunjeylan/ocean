@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use crate::ocean_cache::{EmbeddingCache, QueryCache};
 use crate::ocean_graph::expansion::ExpansionEngine;
 use crate::ocean_query::context::ContextWindowBuilder;
 use crate::ocean_query::error::QueryError;
@@ -67,9 +68,19 @@ pub struct QueryEngine {
     chunk_store: Arc<dyn ChunkStore>,
     search: SearchEngine,
     graph: Option<ExpansionEngine>,
+    embed_cache: Option<EmbeddingCache>,
+    query_cache: Option<QueryCache>,
+    no_cache: bool,
 }
 
 impl QueryEngine {
+    pub fn with_caches(mut self, embed_cache: Option<EmbeddingCache>, query_cache: Option<QueryCache>, no_cache: bool) -> Self {
+        self.embed_cache = embed_cache;
+        self.query_cache = query_cache;
+        self.no_cache = no_cache;
+        self
+    }
+
     pub fn from_storage(storage: Arc<dyn Storage>) -> Result<Self, QueryError> {
         let config = StorageConfig::new(storage.storage_path());
         let vstore: Arc<dyn VectorStore> = Arc::new(
@@ -93,6 +104,9 @@ impl QueryEngine {
             chunk_store: cstore,
             search,
             graph,
+            embed_cache: None,
+            query_cache: None,
+            no_cache: false,
         })
     }
 
@@ -139,6 +153,9 @@ impl QueryEngine {
             chunk_store: cstore,
             search,
             graph,
+            embed_cache: None,
+            query_cache: None,
+            no_cache: false,
         })
     }
 
@@ -175,6 +192,9 @@ impl QueryEngine {
             chunk_store: cstore,
             search,
             graph,
+            embed_cache: None,
+            query_cache: None,
+            no_cache: false,
         })
     }
 
@@ -246,8 +266,68 @@ impl QueryEngine {
         }
 
         let mode = self.resolve_mode(&query);
+
+        if !self.no_cache {
+            if let Some(ref qcache) = self.query_cache {
+                let filter_hash: u64 = query.filter.as_ref().map(|f| {
+                    use std::hash::{Hash, Hasher};
+                    let mut s = std::collections::hash_map::DefaultHasher::new();
+                    f.file_id.hash(&mut s);
+                    f.heading_prefix.hash(&mut s);
+                    f.block_type.hash(&mut s);
+                    s.finish()
+                }).unwrap_or(0);
+
+                let cache_key = crate::ocean_cache::QueryCacheKey {
+                    query_text: query.text.clone(),
+                    mode: mode.clone(),
+                    top_k: query.top_k,
+                    filter_hash,
+                };
+
+                if let Some(cached) = qcache.get(&cache_key) {
+                    return Ok(QueryResult {
+                        results: cached,
+                        context_windows: Vec::new(),
+                        execution: ExecutionMeta {
+                            query_mode: mode.clone(),
+                            total_results: 0,
+                            vector_search_time_ms: 0,
+                            graph_expand_time_ms: None,
+                            fusion_time_ms: 0,
+                            total_time_ms: 0,
+                        },
+                    });
+                }
+            }
+        }
+
         let plan = self.build_execution_plan(&query, &mode);
-        self.execute(&plan, &query, &mode, embedder)
+        let result = self.execute(&plan, &query, &mode, embedder)?;
+
+        if !self.no_cache {
+            if let Some(ref qcache) = self.query_cache {
+                let filter_hash: u64 = query.filter.as_ref().map(|f| {
+                    use std::hash::{Hash, Hasher};
+                    let mut s = std::collections::hash_map::DefaultHasher::new();
+                    f.file_id.hash(&mut s);
+                    f.heading_prefix.hash(&mut s);
+                    f.block_type.hash(&mut s);
+                    s.finish()
+                }).unwrap_or(0);
+
+                let cache_key = crate::ocean_cache::QueryCacheKey {
+                    query_text: query.text.clone(),
+                    mode: mode.clone(),
+                    top_k: query.top_k,
+                    filter_hash,
+                };
+
+                qcache.set(cache_key, result.results.clone());
+            }
+        }
+
+        Ok(result)
     }
 
     fn execute(

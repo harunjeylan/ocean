@@ -1,6 +1,7 @@
 use std::sync::Arc;
 use std::time::Instant;
 
+use crate::ocean_cache::EmbeddingCache;
 use crate::ocean_chunk::chunk;
 use crate::ocean_graph::GraphBuilder;
 use crate::ocean_parser::read_all_blocks;
@@ -27,13 +28,18 @@ impl FileProcessor {
         vector_store: Arc<dyn VectorStore>,
         chunk_store: Arc<dyn ChunkStore>,
         graph_store: Option<Arc<dyn GraphStore>>,
+        embed_cache: Option<EmbeddingCache>,
     ) -> Self {
-        let pipeline = IndexPipeline::new(vector_store, chunk_store);
+        let pipeline = IndexPipeline::new(vector_store, chunk_store, embed_cache);
         Self {
             embedder,
             pipeline,
             graph_store,
         }
+    }
+
+    pub(crate) fn set_embed_cache(&mut self, cache: EmbeddingCache) {
+        self.pipeline.set_embed_cache(cache);
     }
 
     #[allow(dead_code)]

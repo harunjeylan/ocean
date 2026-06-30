@@ -115,6 +115,7 @@ pub struct QueryRequest {
     pub expand_depth: usize,
     pub include_context: bool,
     pub context_chunks: Option<usize>,
+    pub no_cache: bool,
     pub filter_file_id: Option<String>,
     pub filter_heading: Option<String>,
     pub filter_block_type: Option<String>,

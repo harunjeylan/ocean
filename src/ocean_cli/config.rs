@@ -98,6 +98,30 @@ impl Default for QueryConfigOpt {
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(default)]
+pub struct CacheConfigOpt {
+    pub embedding_cache_size: Option<usize>,
+    pub query_cache_size: Option<usize>,
+    pub graph_cache_size: Option<usize>,
+    pub query_ttl_secs: Option<u64>,
+    pub embedding_cache_path: Option<String>,
+    pub enabled: Option<bool>,
+}
+
+impl Default for CacheConfigOpt {
+    fn default() -> Self {
+        Self {
+            embedding_cache_size: None,
+            query_cache_size: None,
+            graph_cache_size: None,
+            query_ttl_secs: None,
+            embedding_cache_path: None,
+            enabled: None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(default)]
 pub struct RuntimeConfigOpt {
     pub io_threads: Option<usize>,
     pub cpu_threads: Option<usize>,
@@ -132,6 +156,8 @@ pub struct OceanConfig {
     pub query: QueryConfigOpt,
     #[serde(default)]
     pub runtime: RuntimeConfigOpt,
+    #[serde(default)]
+    pub cache: CacheConfigOpt,
 }
 
 impl Default for OceanConfig {
@@ -141,6 +167,7 @@ impl Default for OceanConfig {
             index: IndexConfigOpt::default(),
             query: QueryConfigOpt::default(),
             runtime: RuntimeConfigOpt::default(),
+            cache: CacheConfigOpt::default(),
         }
     }
 }
@@ -218,6 +245,12 @@ fn merge_config(base: &mut OceanConfig, partial: OceanConfig) {
     merge_opt!(base.runtime.retry_backoff_ms, partial.runtime.retry_backoff_ms);
     merge_opt!(base.runtime.max_queue_size, partial.runtime.max_queue_size);
     merge_opt!(base.runtime.max_in_flight, partial.runtime.max_in_flight);
+    merge_opt!(base.cache.embedding_cache_size, partial.cache.embedding_cache_size);
+    merge_opt!(base.cache.query_cache_size, partial.cache.query_cache_size);
+    merge_opt!(base.cache.graph_cache_size, partial.cache.graph_cache_size);
+    merge_opt!(base.cache.query_ttl_secs, partial.cache.query_ttl_secs);
+    merge_opt!(base.cache.embedding_cache_path, partial.cache.embedding_cache_path);
+    merge_opt!(base.cache.enabled, partial.cache.enabled);
 }
 
 pub fn resolve_api_key(cli_key: Option<&str>, config_key: Option<&str>, env_var: Option<&str>) -> Option<String> {

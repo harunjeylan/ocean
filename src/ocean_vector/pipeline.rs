@@ -2,6 +2,7 @@ use std::fmt;
 use std::sync::Arc;
 use std::time::Instant;
 
+use crate::ocean_cache::EmbeddingCache;
 use crate::ocean_chunk::Chunk;
 use crate::ocean_storage::chunk_store::ChunkRecord;
 use crate::ocean_storage::{ChunkStore, VectorStore};
@@ -70,11 +71,20 @@ impl From<EmbedderError> for IndexError {
 pub struct IndexPipeline {
     store: Arc<dyn VectorStore>,
     chunk_store: Arc<dyn ChunkStore>,
+    embed_cache: Option<EmbeddingCache>,
 }
 
 impl IndexPipeline {
-    pub fn new(store: Arc<dyn VectorStore>, chunk_store: Arc<dyn ChunkStore>) -> Self {
-        Self { store, chunk_store }
+    pub fn new(
+        store: Arc<dyn VectorStore>,
+        chunk_store: Arc<dyn ChunkStore>,
+        embed_cache: Option<EmbeddingCache>,
+    ) -> Self {
+        Self { store, chunk_store, embed_cache }
+    }
+
+    pub fn set_embed_cache(&mut self, cache: EmbeddingCache) {
+        self.embed_cache = Some(cache);
     }
 
     pub fn index_chunks(
@@ -90,26 +100,42 @@ impl IndexPipeline {
         let mut errors = Vec::new();
         let total = chunks.len();
 
+        fn content_hash(text: &str) -> String {
+            use sha2::{Digest, Sha256};
+            let mut hasher = Sha256::new();
+            hasher.update(text.as_bytes());
+            format!("{:x}", hasher.finalize())
+        }
+
         for batch in chunks.chunks(config.batch_size) {
-            let mut to_embed: Vec<(&Chunk, usize)> = Vec::new();
+            let mut to_embed: Vec<(&Chunk, usize, String)> = Vec::new();
+            let mut cached: Vec<(ChunkRecord, Vec<f32>)> = Vec::new();
             let mut skip_indices: Vec<bool> = vec![false; batch.len()];
 
             for (i, chunk) in batch.iter().enumerate() {
-                let content_hash = {
-                    use sha2::{Digest, Sha256};
-                    let mut hasher = Sha256::new();
-                    hasher.update(chunk.content.as_bytes());
-                    format!("{:x}", hasher.finalize())
-                };
+                let hash = content_hash(&chunk.content);
+
+                let mut already_cached = false;
+                if let Some(ref cache) = self.embed_cache {
+                    if let Some(emb) = cache.get(&hash, &config.model) {
+                        let record = ChunkRecord::from_chunk(chunk, emb.clone(), &config.model);
+                        cached.push((record, emb));
+                        already_cached = true;
+                    }
+                }
+
+                if already_cached {
+                    continue;
+                }
 
                 if !config.reindex {
-                    match self.chunk_store.chunk_exists(&content_hash, &config.model) {
+                    match self.chunk_store.chunk_exists(&hash, &config.model) {
                         Ok(true) => {
                             skipped += 1;
                             skip_indices[i] = true;
                         }
                         Ok(false) => {
-                            to_embed.push((chunk, i));
+                            to_embed.push((chunk, i, hash));
                         }
                         Err(e) => {
                             failed += 1;
@@ -118,7 +144,17 @@ impl IndexPipeline {
                         }
                     }
                 } else {
-                    to_embed.push((chunk, i));
+                    to_embed.push((chunk, i, hash));
+                }
+            }
+
+            for (record, _) in &cached {
+                match self.store.insert(record) {
+                    Ok(_) => embedded += 1,
+                    Err(e) => {
+                        failed += 1;
+                        errors.push(IndexError::Store(e.to_string()));
+                    }
                 }
             }
 
@@ -126,31 +162,26 @@ impl IndexPipeline {
                 continue;
             }
 
-            let batch_len = to_embed.len();
-            let texts: Vec<&str> = to_embed.iter().map(|(c, _)| c.content.as_str()).collect();
+            let texts: Vec<&str> = to_embed.iter().map(|(c, _, _)| c.content.as_str()).collect();
 
             match embedder.embed_batch(&texts) {
                 Ok(embeddings) => {
-                    let records: Vec<ChunkRecord> = to_embed
-                        .into_iter()
-                        .zip(embeddings.into_iter())
-                        .map(|((chunk, _), embedding)| {
-                            ChunkRecord::from_chunk(chunk, embedding, &config.model)
-                        })
-                        .collect();
-
-                    for r in &records {
-                        match self.store.insert(r) {
+                    for ((chunk, _, hash), embedding) in to_embed.into_iter().zip(embeddings.into_iter()) {
+                        let record = ChunkRecord::from_chunk(chunk, embedding.clone(), &config.model);
+                        match self.store.insert(&record) {
                             Ok(_) => embedded += 1,
                             Err(e) => {
                                 failed += 1;
                                 errors.push(IndexError::Store(e.to_string()));
                             }
                         }
+                        if let Some(ref cache) = self.embed_cache {
+                            cache.set(&hash, &config.model, embedding);
+                        }
                     }
                 }
                 Err(e) => {
-                    failed += batch_len;
+                    failed += texts.len();
                     errors.push(IndexError::Embedder(e));
                 }
             }

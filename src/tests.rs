@@ -70,3 +70,12 @@ mod index_worker_pool_spec;
 mod index_rate_limiter_spec;
 #[path = "ocean_index/orchestrator_test.rs"]
 mod index_orchestrator_spec;
+
+#[path = "ocean_cache/lru_test.rs"]
+mod cache_lru_spec;
+#[path = "ocean_cache/embedding_cache_test.rs"]
+mod cache_embedding_spec;
+#[path = "ocean_cache/query_cache_test.rs"]
+mod cache_query_spec;
+#[path = "ocean_cache/graph_cache_test.rs"]
+mod cache_graph_spec;

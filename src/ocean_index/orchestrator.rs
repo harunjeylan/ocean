@@ -4,6 +4,7 @@ use std::time::Instant;
 use rayon::prelude::*;
 use sha2::{Digest, Sha256};
 
+use crate::ocean_cache::cache_manager::CacheManager;
 use crate::ocean_fs::scan_dir;
 use crate::ocean_storage::{ChunkStore, GraphStore, IndexStatus, StateStore, VectorStore};
 use crate::ocean_vector::embedder::Embedder;
@@ -28,6 +29,7 @@ pub struct IndexOrchestrator {
     state_store: Arc<dyn StateStore>,
     reporter: Arc<dyn ProgressReporter>,
     pool: WorkerPool,
+    cache_manager: Option<Arc<CacheManager>>,
 }
 
 impl IndexOrchestrator {
@@ -44,6 +46,7 @@ impl IndexOrchestrator {
             vector_store,
             chunk_store,
             graph_store,
+            None,
         );
         let pool = WorkerPool::default();
         Self {
@@ -51,7 +54,18 @@ impl IndexOrchestrator {
             state_store,
             reporter,
             pool,
+            cache_manager: None,
         }
+    }
+
+    pub fn with_embed_cache(mut self, cache: crate::ocean_cache::EmbeddingCache) -> Self {
+        self.processor.set_embed_cache(cache);
+        self
+    }
+
+    pub fn with_cache_manager(mut self, cm: Arc<CacheManager>) -> Self {
+        self.cache_manager = Some(cm);
+        self
     }
 
     pub fn run(&self, config: IndexConfig) -> Result<IndexReport, IndexError> {

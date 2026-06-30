@@ -162,6 +162,8 @@ pub struct QueryArgs {
     #[arg(long)]
     pub context_chunks: Option<usize>,
     #[arg(long)]
+    pub no_cache: bool,
+    #[arg(long)]
     pub file_id: Option<String>,
     #[arg(long)]
     pub heading: Option<String>,

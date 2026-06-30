@@ -8,6 +8,7 @@ pub mod ocean_query;
 pub mod ocean_storage;
 pub mod ocean_index;
 pub mod ocean_api;
+pub mod ocean_cache;
 
 #[cfg(test)]
 mod tests;

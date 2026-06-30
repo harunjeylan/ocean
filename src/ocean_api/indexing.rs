@@ -129,5 +129,9 @@ pub fn index_directory(request: IndexRequest) -> Result<IndexResult, ApiError> {
         Arc::new(ConsoleReporter),
     );
 
+    let embed_cache_path = format!("{}/cache", request.db_path.as_deref().unwrap_or(""));
+    let embed_cache = crate::ocean_cache::EmbeddingCache::new(1000, Some(&embed_cache_path));
+    let orchestrator = orchestrator.with_embed_cache(embed_cache);
+
     orchestrator.run(index_config).map_err(|e| ApiError::IndexError(e.to_string()))
 }

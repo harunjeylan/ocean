@@ -1,3 +1,4 @@
+use crate::ocean_cache::{EmbeddingCache, QueryCache};
 use crate::ocean_query::{Query, QueryEngine, QueryMode};
 use crate::ocean_storage::config::StorageConfig;
 use crate::ocean_storage::graph_store::GraphStore;
@@ -22,11 +23,21 @@ pub fn query(request: QueryRequest) -> Result<crate::ocean_query::QueryResult, A
     let dimension = EmbeddingConfig::resolve_dimension(request.dimension, None, &provider, &model);
 
     let base_path = request.db_path.as_deref().unwrap_or("");
-    let engine = QueryEngine::new_with_paths(
+    let mut engine = QueryEngine::new_with_paths(
         &format!("{}/vector.db", base_path),
         &format!("{}/graph.db", base_path),
         dimension,
     )?;
+
+    let no_cache = request.no_cache;
+    engine = if !no_cache {
+        let cache_dir = format!("{}/cache", base_path);
+        let embed_cache = EmbeddingCache::new(1000, Some(&cache_dir));
+        let query_cache = QueryCache::new(100, 60);
+        engine.with_caches(Some(embed_cache), Some(query_cache), false)
+    } else {
+        engine
+    };
 
     let resolved_key = api_key(request.api_key.as_deref(), None, None);
     let base_url = EmbeddingConfig::resolve_base_url(&provider, request.base_url.as_deref(), None);

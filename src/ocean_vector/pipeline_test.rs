@@ -25,7 +25,7 @@ fn init_pipeline() -> IndexPipeline {
     let config = StorageConfig::new(":memory:");
     let store = Arc::new(SurrealVectorStore::new_memory(&config).unwrap());
     store.initialize_schema(4).unwrap();
-    IndexPipeline::new(store.clone(), store)
+    IndexPipeline::new(store.clone(), store, None)
 }
 
 #[test]

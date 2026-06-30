@@ -365,6 +365,7 @@ fn cmd_query(args: QueryArgs, config: &Option<OceanConfig>) -> Result<(), String
         expand_depth: args.expand_depth,
         include_context: args.context,
         context_chunks: args.context_chunks,
+        no_cache: args.no_cache,
         filter_file_id: args.file_id,
         filter_heading: args.heading,
         filter_block_type: args.block_type,

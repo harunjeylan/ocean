@@ -1,17 +1,23 @@
 use std::collections::{HashSet, VecDeque, HashMap};
 use std::sync::Arc;
 
+use crate::ocean_cache::GraphCache;
 use crate::ocean_graph::error::GraphError;
 use crate::ocean_graph::types::{Edge, EdgeDirection, Node, Subgraph};
 use crate::ocean_storage::graph_store::GraphStore;
 
 pub struct ExpansionEngine {
     store: Arc<dyn GraphStore>,
+    graph_cache: Option<GraphCache>,
 }
 
 impl ExpansionEngine {
     pub fn new(store: Arc<dyn GraphStore>) -> Self {
-        Self { store }
+        Self { store, graph_cache: None }
+    }
+
+    pub fn new_with_cache(store: Arc<dyn GraphStore>, cache: GraphCache) -> Self {
+        Self { store, graph_cache: Some(cache) }
     }
 
     pub fn expand(
@@ -45,7 +51,17 @@ impl ExpansionEngine {
                 continue;
             }
 
-            let neighbors = self.store.get_neighbors(&current_id)?;
+            let neighbors = if let Some(ref cache) = self.graph_cache {
+                if let Some(cached) = cache.get(&current_id) {
+                    cached
+                } else {
+                    let fetched = self.store.get_neighbors(&current_id)?;
+                    cache.set(current_id.clone(), fetched.clone());
+                    fetched
+                }
+            } else {
+                self.store.get_neighbors(&current_id)?
+            };
 
             for (neighbor_node, edge) in neighbors {
                 if edge.weight <= 0.0 {

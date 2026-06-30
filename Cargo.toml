@@ -20,9 +20,9 @@ crossbeam-channel = "0.5"
 glob = "0.3"
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 serde = { version = "1", features = ["derive"] }
-surrealdb = { version = "2", features = ["kv-mem", "kv-surrealkv"] }
+surrealdb = { version = "3", features = ["kv-mem", "kv-surrealkv"] }
 quick-xml = "0.41"
-zip = "2"
+zip = "8"
 calamine = "0.24"
 lopdf = "0.43"
 clap = { version = "4", features = ["derive"] }

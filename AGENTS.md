@@ -87,9 +87,19 @@
 - **Error types**: `EmbedderError`, `StoreError`, `IndexError`, `SearchError` — all implement `Display` + `Error`
 - **MockEmbedder** in tests: returns deterministic unit vectors of configurable dimension
 
+## Module: ocean_graph (Phase 5)
+- **Node/Edge types**: `Node` (id, node_type, ref_id, label), `Edge` (from, to, relation, weight, metadata), `NodeType` (File, Chunk, Heading, Entity, Folder), `RelationType` (Contains, References, Mentions, BelongsTo, DerivedFrom, SimilarTo, CrossReference)
+- **GraphStore**: SurrealDB-backed (in-memory for tests, SurrealKv for persistence) with `graph_node` and `graph_edge` SCHEMAFULL tables. CRUD: insert/get/delete by file, neighbors query, type/relation queries, count, clear
+- **GraphBuilder**: `from_chunks(chunks, file_id, config)` — builds structural edges (File→Contains→Chunk, Chunk→BelongsTo→File/Heading), reference edges (see/refer to/as per/per patterns), and entity edges (capitalized phrases + repeated words)
+- **EntityExtractor**: heuristic extraction of capitalized phrases (3+ words), repeated words (configurable frequency threshold)
+- **ExpansionEngine**: BFS traversal with `expand(node_id, depth, direction)`, `expand_from_chunks(chunk_ids, depth)`, `find_path(from, to, max_depth)`, `get_file_graph(file_id)`.
+- **GraphConfig**: extract_references (default true), extract_entities (true), max_expansion_depth (3), entity_min_frequency (3), default_edge_weight (1.0)
+- **Index integration**: graph built automatically after vector indexing in `ocean index` (opt-out via `--no-graph`)
+- **Context expansion**: `SearchEngine::expand_results()` enriches vector search results with graph-connected chunks
+
 ## Commands
 ```
-cargo test                         # all (160 lib/bin/integration tests)
+cargo test                         # all (200 lib/bin/integration tests)
 cargo test --lib                   # unit tests only (ocean_fs + ocean_parser + ocean_chunk)
 cargo test --test fs_integration   # ocean_fs integration
 cargo test --test parser_integration   # ocean_parser integration

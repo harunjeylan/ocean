@@ -309,6 +309,192 @@ ocean chunk data.xlsx --rows-per-chunk 100
 
 ---
 
+## Graph Commands
+
+### graph info — Show graph info for a file
+
+Show node count, edge count, and node-type breakdown for a file's subgraph.
+
+```
+ocean graph info <file> [--db-path <path>]
+```
+
+**Options:**
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--db-path` | `ocean.db` | Path to SurrealDB database |
+
+```
+ocean graph info report.pdf
+  Graph Info:
+    Total nodes: 5
+    Total edges: 7
+    Breakdown by type:
+      File: 1
+      Chunk: 3
+      Heading: 1
+```
+
+### graph expand — Expand from a node
+
+Traverse the graph starting from a seed node up to a given depth.
+
+```
+ocean graph expand <node-id> [--depth <N>] [--direction <dir>] [--db-path <path>]
+```
+
+**Options:**
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--depth` | 2 | Max expansion depth (1–5) |
+| `--direction` | `both` | `forward`, `backward`, or `both` |
+| `--db-path` | `ocean.db` | Path to SurrealDB database |
+
+```
+ocean graph expand chunk:019f21a1 --depth 2 --direction both
+  Expanded from 'chunk:019f21a1' (depth: 2):
+    [File] file:f1  "-"
+    [Chunk] chunk:c1  "-"
+    [Heading] heading:h1  "Intro"
+    [Chunk] chunk:c2  "-"
+  Edges:
+    chunk:c1  --BelongsTo-->  heading:h1  (w: 1.0)
+    file:f1  --Contains-->  chunk:c1  (w: 1.0)
+    chunk:c1  --BelongsTo-->  file:f1  (w: 1.0)
+    chunk:c1  --References-->  chunk:c2  (w: 0.7)
+```
+
+### graph path — Find shortest path between two nodes
+
+```
+ocean graph path <from-id> <to-id> [--max-depth <N>] [--db-path <path>]
+```
+
+**Options:**
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--max-depth` | 5 | Max search depth (1–10) |
+| `--db-path` | `ocean.db` | Path to SurrealDB database |
+
+```
+ocean graph path chunk:c1 heading:h1
+  Path (2 hops):
+    1. chunk:c1 --BelongsTo--> heading:h1 (w: 1.0)
+```
+
+### graph stats — Show global graph statistics
+
+```
+ocean graph stats [--db-path <path>]
+```
+
+**Options:**
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--db-path` | `ocean.db` | Path to SurrealDB database |
+
+```
+ocean graph stats
+  Graph Stats:
+    Total nodes: 150
+    Total edges: 320
+    By type:
+      File: 10
+      Chunk: 100
+      Heading: 40
+```
+
+---
+
+## Index Command
+
+### index — Scan, parse, chunk, embed, and index documents for vector search
+
+Recursively scan a directory for supported documents, parse each file, split into semantic chunks, compute embeddings, and store in SurrealDB with HNSW vector index.
+
+```
+ocean index <dir> [--model <name>] [--provider <name>] [--ollama-url <url>]
+                [--openai-key <key>] [--anthropic-key <key>] [--gemini-key <key>]
+                [--db-path <path>] [--batch-size <N>] [--reindex]
+                [--no-graph] [--no-references] [--no-entities]
+```
+
+**Options:**
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--model` | `nomic-embed-text` | Embedding model name |
+| `--provider` | `ollama` | Embedding provider (`ollama`, `openai`, `anthropic`, `gemini`) |
+| `--ollama-url` | `http://localhost:11434` | Ollama server URL |
+| `--openai-key` | — | OpenAI API key (required for openai provider) |
+| `--anthropic-key` | — | Anthropic API key (required for anthropic provider) |
+| `--gemini-key` | — | Gemini API key (required for gemini provider) |
+| `--db-path` | `ocean.db` | SurrealDB database path |
+| `--batch-size` | 10 | Chunks per embedding batch |
+| `--reindex` | false | Re-index existing files (update chunks) |
+| `--no-graph` | false | Skip graph building |
+| `--no-references` | false | Skip reference edge extraction during graph build |
+| `--no-entities` | false | Skip entity extraction during graph build |
+
+```
+ocean index ./documents
+  Found 5 supported file(s) in './documents'. Indexing...
+  [1/5] Processing: report.pdf
+    Indexed: 12 embedded, 0 skipped, 0 failed (342ms)
+    Graph: 5 nodes, 8 edges
+  [2/5] Processing: notes.docx
+    Indexed: 8 embedded, 0 skipped, 0 failed (215ms)
+    Graph: 4 nodes, 6 edges
+  ...
+  Graph total: 25 nodes, 40 edges
+  Indexing complete.
+```
+
+---
+
+## Vector Search Command
+
+### vector-search — Semantic vector search over indexed documents
+
+Search across all indexed documents using cosine similarity, optionally with hybrid (vector + FTS) search, filtering, and graph context expansion.
+
+```
+ocean vector-search <query> [--top-k <N>] [--hybrid] [--file-id <id>]
+                             [--heading <prefix>] [--block-type <type>]
+                             [--model <name>] [--provider <name>]
+                             [--db-path <path>] [--expand-depth <N>]
+```
+
+**Options:**
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--top-k` | 10 | Max results |
+| `--hybrid` | false | Combine vector + FTS search with RRF fusion |
+| `--file-id` | — | Filter by file ID |
+| `--heading` | — | Filter by heading prefix |
+| `--block-type` | — | Filter by block type (Text, Heading, Table, etc.) |
+| `--model` | `nomic-embed-text` | Embedding model name |
+| `--provider` | `ollama` | Embedding provider |
+| `--db-path` | `ocean.db` | SurrealDB database path |
+| `--expand-depth` | 0 | Graph expansion depth (0 = disabled) |
+
+```
+ocean vector-search "budget allocation" --top-k 5 --expand-depth 1
+  Top 5 expanded results for 'budget allocation':
+    1. score=0.8521 (vec=0.8521)  file=019f14f7  heading="Budget"
+       "...the annual budget allocation for 2025..."
+    2. score=0.7234  file=019f14f7  heading="Budget"
+       "...related budget planning document (see Finance Report)..."
+    ...
+```
+
+---
+
 ## Exit codes
 
 | Code | Meaning |

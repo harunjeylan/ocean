@@ -38,6 +38,8 @@ pub struct IndexReport {
     pub failed: usize,
     pub duration_ms: u64,
     pub errors: Vec<IndexError>,
+    pub graph_nodes: usize,
+    pub graph_edges: usize,
 }
 
 #[derive(Debug, Clone)]
@@ -175,6 +177,8 @@ impl IndexPipeline {
             failed,
             duration_ms,
             errors,
+            graph_nodes: 0,
+            graph_edges: 0,
         })
     }
 }

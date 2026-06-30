@@ -28,3 +28,12 @@ mod store_spec;
 mod pipeline_spec;
 #[path = "ocean_vector/search_test.rs"]
 mod search_spec;
+
+#[path = "ocean_graph/store_test.rs"]
+mod graph_store_spec;
+#[path = "ocean_graph/builder_test.rs"]
+mod graph_builder_spec;
+#[path = "ocean_graph/entity_test.rs"]
+mod graph_entity_spec;
+#[path = "ocean_graph/expansion_test.rs"]
+mod graph_expansion_spec;

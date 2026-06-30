@@ -149,6 +149,7 @@ fn test_search_result_creation() {
         block_type: "Text".into(),
         vector_score: Some(0.95),
         fts_score: None,
+        graph_score: None,
     };
     assert_eq!(r.chunk_id, "c1");
     assert_eq!(r.score, 0.95);

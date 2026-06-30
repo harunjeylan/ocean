@@ -123,6 +123,8 @@ fn test_index_report_display_fields() {
         failed: 1,
         duration_ms: 1500,
         errors: vec![],
+        graph_nodes: 0,
+        graph_edges: 0,
     };
     assert_eq!(report.total, 10);
     assert_eq!(report.embedded, 7);

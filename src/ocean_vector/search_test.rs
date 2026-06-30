@@ -11,6 +11,7 @@ fn test_rrf_fusion() {
         block_type: "Text".into(),
         vector_score: vs,
         fts_score: fs,
+        graph_score: None,
     };
 
     let vector_results = vec![
@@ -45,6 +46,7 @@ fn test_rrf_top_k_truncation() {
         block_type: "Text".into(),
         vector_score: vs,
         fts_score: None,
+        graph_score: None,
     };
 
     let vector_results: Vec<SearchResult> = (0..10)

@@ -23,6 +23,43 @@ pub enum Commands {
     Chunk(ChunkArgs),
     Index(IndexArgs),
     VectorSearch(VectorSearchArgs),
+    Graph(GraphArgs),
+}
+
+#[derive(Args)]
+pub struct GraphArgs {
+    #[command(subcommand)]
+    pub command: GraphCommands,
+}
+
+#[derive(Subcommand)]
+pub enum GraphCommands {
+    Info {
+        file: String,
+        #[arg(long, default_value = "ocean.db")]
+        db_path: String,
+    },
+    Expand {
+        node_id: String,
+        #[arg(long, default_value_t = 2)]
+        depth: usize,
+        #[arg(long, default_value = "both")]
+        direction: String,
+        #[arg(long, default_value = "ocean.db")]
+        db_path: String,
+    },
+    Path {
+        from: String,
+        to: String,
+        #[arg(long, default_value_t = 5)]
+        max_depth: usize,
+        #[arg(long, default_value = "ocean.db")]
+        db_path: String,
+    },
+    Stats {
+        #[arg(long, default_value = "ocean.db")]
+        db_path: String,
+    },
 }
 
 #[derive(Args)]
@@ -92,6 +129,12 @@ pub struct IndexArgs {
     pub batch_size: usize,
     #[arg(long)]
     pub reindex: bool,
+    #[arg(long)]
+    pub no_graph: bool,
+    #[arg(long)]
+    pub no_references: bool,
+    #[arg(long)]
+    pub no_entities: bool,
 }
 
 #[derive(Args)]
@@ -125,4 +168,6 @@ pub struct VectorSearchArgs {
     pub gemini_key: Option<String>,
     #[arg(long, default_value = "ocean.db")]
     pub db_path: String,
+    #[arg(long, default_value_t = 0)]
+    pub expand_depth: usize,
 }

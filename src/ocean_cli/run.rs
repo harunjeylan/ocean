@@ -5,10 +5,13 @@ use std::sync::Arc;
 use clap::Parser;
 
 use crate::ocean_chunk::*;
-use crate::ocean_cli::args::{ChunkArgs, Cli, Commands, IndexArgs, ReadArgs, VectorSearchArgs};
+use crate::ocean_cli::args::{
+    ChunkArgs, Cli, Commands, GraphArgs, GraphCommands, IndexArgs, ReadArgs, VectorSearchArgs,
+};
 use crate::ocean_cli::display::*;
 use crate::ocean_cli::walk::*;
 use crate::ocean_fs::*;
+use crate::ocean_graph::*;
 use crate::ocean_parser::*;
 use crate::ocean_vector::*;
 
@@ -30,6 +33,7 @@ pub fn run() -> Result<(), String> {
         Commands::Chunk(args) => cmd_chunk(args),
         Commands::Index(args) => cmd_index(args),
         Commands::VectorSearch(args) => cmd_vector_search(args),
+        Commands::Graph(args) => cmd_graph(args),
     }
 }
 
@@ -317,6 +321,16 @@ fn cmd_index(args: IndexArgs) -> Result<(), String> {
     store.initialize_schema(dim)
         .map_err(|e| format!("Failed to init schema: {}", e))?;
 
+    let graph_store = if !args.no_graph {
+        let gs = GraphStore::new_persistent(&args.db_path)
+            .map_err(|e| format!("Failed to open graph store: {}", e))?;
+        gs.initialize_schema()
+            .map_err(|e| format!("Failed to init graph schema: {}", e))?;
+        Some(gs)
+    } else {
+        None
+    };
+
     let embedder = create_embedder(&args.provider, &args.model, &args.ollama_url,
         args.openai_key.as_deref(), args.openai_url.as_deref(),
         args.anthropic_key.as_deref(), args.anthropic_url.as_deref(),
@@ -334,7 +348,16 @@ fn cmd_index(args: IndexArgs) -> Result<(), String> {
         db_path: args.db_path.clone(),
     };
 
+    let graph_config = GraphConfig {
+        extract_references: !args.no_references,
+        extract_entities: !args.no_entities,
+        ..Default::default()
+    };
+
     let file_count = files.len();
+    let mut total_graph_nodes = 0usize;
+    let mut total_graph_edges = 0usize;
+
     for (i, path) in files.iter().enumerate() {
         let name = path.to_string_lossy();
         println!("[{}/{}] Processing: {}", i + 1, file_count, name);
@@ -378,7 +401,7 @@ fn cmd_index(args: IndexArgs) -> Result<(), String> {
             continue;
         }
 
-        match pipeline.index_chunks(chunks, &*embedder, &config) {
+        match pipeline.index_chunks(chunks.clone(), &*embedder, &config) {
             Ok(report) => {
                 println!(
                     "  Indexed: {} embedded, {} skipped, {} failed ({}ms)",
@@ -389,6 +412,38 @@ fn cmd_index(args: IndexArgs) -> Result<(), String> {
                 println!("  Index error: {}", e);
             }
         }
+
+        if let Some(ref gs) = graph_store {
+            if args.reindex {
+                let _ = gs.delete_nodes_by_file(&file_id);
+                let _ = gs.delete_edges_by_file(&file_id);
+            }
+
+            let (nodes, edges) = GraphBuilder::from_chunks(&chunks, &file_id, &graph_config);
+            let node_count = nodes.len();
+            let edge_count = edges.len();
+            total_graph_nodes += node_count;
+            total_graph_edges += edge_count;
+
+            let node_pairs: Vec<(Node, String)> = nodes.into_iter()
+                .map(|n| (n, file_id.clone()))
+                .collect();
+            let edge_pairs: Vec<(Edge, String)> = edges.into_iter()
+                .map(|e| (e, file_id.clone()))
+                .collect();
+
+            if let Err(e) = gs.insert_nodes_batch(node_pairs) {
+                println!("  Graph node insert error: {}", e);
+            } else if let Err(e) = gs.insert_edges_batch(edge_pairs) {
+                println!("  Graph edge insert error: {}", e);
+            } else {
+                println!("  Graph: {} nodes, {} edges", node_count, edge_count);
+            }
+        }
+    }
+
+    if !args.no_graph {
+        println!("Graph total: {} nodes, {} edges", total_graph_nodes, total_graph_edges);
     }
 
     println!("Indexing complete.");
@@ -441,36 +496,53 @@ fn cmd_vector_search(args: VectorSearchArgs) -> Result<(), String> {
         }
     };
 
-    match results {
-        Ok(results) => {
-            if results.is_empty() {
-                println!("No results found.");
-            } else {
-                println!("Top {} results for '{}':", results.len(), args.query);
-                for (i, r) in results.iter().enumerate() {
-                    let content_short = if r.content.len() > 120 {
-                        format!("{}...", &r.content[..120])
-                    } else {
-                        r.content.clone()
-                    };
-                    let heading = r.heading.as_deref().unwrap_or("(none)");
-                    let score_info = if let (Some(vs), Some(fs)) = (r.vector_score, r.fts_score) {
-                        format!("score={:.4} (vec={:.4}, fts={:.4})", r.score, vs, fs)
-                    } else {
-                        format!("score={:.4}", r.score)
-                    };
-                    println!(
-                        "  {}. {}  file={}  heading=\"{}\"",
-                        i + 1,
-                        score_info,
-                        &r.file_id[..8],
-                        heading,
-                    );
-                    println!("     \"{}\"", content_short);
+    let results = match results {
+        Ok(mut results) => {
+            if args.expand_depth > 0 {
+                if let Ok(graph_store) = GraphStore::new_persistent(&args.db_path) {
+                    if graph_store.initialize_schema().is_ok() {
+                        let expansion = ExpansionEngine::new(graph_store);
+                        if let Ok(expanded) = engine.expand_results(&results, &expansion, args.expand_depth) {
+                            results = expanded;
+                        }
+                    }
                 }
             }
+            results
         }
         Err(e) => return Err(format!("Search failed: {}", e)),
+    };
+
+    if results.is_empty() {
+        println!("No results found.");
+    } else {
+        let label = if args.expand_depth > 0 { "expanded results" } else { "results" };
+        println!("Top {} {} for '{}':", results.len(), label, args.query);
+        for (i, r) in results.iter().enumerate() {
+            let content_short = if r.content.len() > 120 {
+                format!("{}...", &r.content[..120])
+            } else {
+                r.content.clone()
+            };
+            let heading = r.heading.as_deref().unwrap_or("(none)");
+            let graph_info = match r.graph_score {
+                Some(gs) => format!(" graph={:.4}", gs),
+                None => String::new(),
+            };
+            let score_info = if let (Some(vs), Some(fs)) = (r.vector_score, r.fts_score) {
+                format!("score={:.4} (vec={:.4}, fts={:.4}){}", r.score, vs, fs, graph_info)
+            } else {
+                format!("score={:.4}{}", r.score, graph_info)
+            };
+            println!(
+                "  {}. {}  file={}  heading=\"{}\"",
+                i + 1,
+                score_info,
+                &r.file_id[..8],
+                heading,
+            );
+            println!("     \"{}\"", content_short);
+        }
     }
 
     Ok(())
@@ -512,5 +584,100 @@ fn cmd_chunk(args: ChunkArgs) -> Result<(), String> {
         );
     }
 
+    Ok(())
+}
+
+fn cmd_graph(args: GraphArgs) -> Result<(), String> {
+    match args.command {
+        GraphCommands::Info { file, db_path } => cmd_graph_info(file, db_path),
+        GraphCommands::Expand { node_id, depth, direction, db_path } => {
+            cmd_graph_expand(node_id, depth, direction, db_path)
+        }
+        GraphCommands::Path { from, to, max_depth, db_path } => {
+            cmd_graph_path(from, to, max_depth, db_path)
+        }
+        GraphCommands::Stats { db_path } => cmd_graph_stats(db_path),
+    }
+}
+
+fn cmd_graph_info(file: String, db_path: String) -> Result<(), String> {
+    let store = GraphStore::new_persistent(&db_path)
+        .map_err(|e| format!("Failed to open graph store: {}", e))?;
+
+    let metas = scan_dir(&file).map_err(|e| format!("Scan failed: {}", e))?;
+    if metas.is_empty() {
+        return Err(format!("No supported files found matching: {}", file));
+    }
+    let file_id = &metas[0].id;
+
+    let subgraph = ExpansionEngine::new(store)
+        .get_file_graph(file_id)
+        .map_err(|e| format!("Failed to get file graph: {}", e))?;
+
+    let mut type_counts: std::collections::HashMap<NodeType, usize> = std::collections::HashMap::new();
+    for node in &subgraph.nodes {
+        *type_counts.entry(node.node_type.clone()).or_insert(0) += 1;
+    }
+
+    print_graph_info(
+        subgraph.nodes.len() as u64,
+        subgraph.edges.len() as u64,
+        type_counts.into_iter().collect(),
+    );
+    Ok(())
+}
+
+fn cmd_graph_expand(node_id: String, depth: usize, direction: String, db_path: String) -> Result<(), String> {
+    let store = GraphStore::new_persistent(&db_path)
+        .map_err(|e| format!("Failed to open graph store: {}", e))?;
+
+    let dir = match direction.to_lowercase().as_str() {
+        "forward" => EdgeDirection::Forward,
+        "backward" => EdgeDirection::Backward,
+        "both" => EdgeDirection::Both,
+        other => return Err(format!("invalid direction '{}'. Use: forward, backward, both", other)),
+    };
+
+    let engine = ExpansionEngine::new(store);
+    let subgraph = engine
+        .expand(&node_id, depth, dir)
+        .map_err(|e| format!("Expansion failed: {}", e))?;
+
+    print_graph_expanded(&subgraph);
+    Ok(())
+}
+
+fn cmd_graph_path(from: String, to: String, max_depth: usize, db_path: String) -> Result<(), String> {
+    let store = GraphStore::new_persistent(&db_path)
+        .map_err(|e| format!("Failed to open graph store: {}", e))?;
+
+    let engine = ExpansionEngine::new(store);
+    let path = engine
+        .find_path(&from, &to, max_depth)
+        .map_err(|e| format!("Path find failed: {}", e))?;
+
+    match path {
+        Some(edges) => print_graph_path(&edges),
+        None => println!("No path found between '{}' and '{}' within {} hops.", from, to, max_depth),
+    }
+    Ok(())
+}
+
+fn cmd_graph_stats(db_path: String) -> Result<(), String> {
+    let store = GraphStore::new_persistent(&db_path)
+        .map_err(|e| format!("Failed to open graph store: {}", e))?;
+
+    let node_count = store.count_nodes().map_err(|e| format!("Count failed: {}", e))?;
+    let edge_count = store.count_edges().map_err(|e| format!("Count failed: {}", e))?;
+
+    let type_counts = vec![
+        ("File".to_string(), 0u64),
+        ("Chunk".to_string(), 0u64),
+        ("Heading".to_string(), 0u64),
+        ("Entity".to_string(), 0u64),
+        ("Folder".to_string(), 0u64),
+    ];
+
+    print_graph_stats(node_count, edge_count, type_counts);
     Ok(())
 }

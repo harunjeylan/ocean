@@ -1,6 +1,8 @@
 use std::collections::HashMap;
 use std::fmt;
 
+use crate::ocean_graph::expansion::ExpansionEngine;
+use crate::ocean_graph::types::EdgeDirection;
 use crate::ocean_vector::embedder::{Embedder, EmbedderError};
 use crate::ocean_vector::store::{StoreError, VectorStore};
 
@@ -14,6 +16,7 @@ pub struct SearchResult {
     pub block_type: String,
     pub vector_score: Option<f32>,
     pub fts_score: Option<f32>,
+    pub graph_score: Option<f32>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -183,6 +186,58 @@ impl SearchEngine {
 
         Ok(fuse_rrf(vector_parsed, fts_parsed, 60.0, top_k))
     }
+
+    pub fn expand_results(
+        &self,
+        results: &[SearchResult],
+        expansion: &ExpansionEngine,
+        depth: usize,
+    ) -> Result<Vec<SearchResult>, SearchError> {
+        if depth == 0 {
+            return Ok(results.to_vec());
+        }
+
+        let mut expanded: Vec<SearchResult> = results.to_vec();
+        let mut seen_chunks: std::collections::HashSet<String> =
+            results.iter().map(|r| r.chunk_id.clone()).collect();
+
+        for result in results {
+            let chunk_node_id = format!("chunk:{}", result.chunk_id);
+            let subgraph = match expansion.expand(&chunk_node_id, depth, EdgeDirection::Both) {
+                Ok(sg) => sg,
+                Err(_) => continue,
+            };
+
+            for node in &subgraph.nodes {
+                let nt = format!("{:?}", node.node_type);
+                if nt != "Chunk" {
+                    continue;
+                }
+                let chunk_id = node.ref_id.clone();
+                if seen_chunks.insert(chunk_id.clone()) {
+                    if let Ok(Some(record)) = self.store.get_chunk(&chunk_id) {
+                        let combined_score =
+                            0.7 * result.score + 0.3 * (1.0 / (1.0 + 1.0));
+
+                        expanded.push(SearchResult {
+                            chunk_id,
+                            file_id: record.file_id,
+                            content: record.content,
+                            heading: record.heading,
+                            score: combined_score,
+                            block_type: record.block_type,
+                            vector_score: result.vector_score,
+                            fts_score: result.fts_score,
+                            graph_score: Some(combined_score),
+                        });
+                    }
+                }
+            }
+        }
+
+        expanded.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        Ok(expanded)
+    }
 }
 
 fn parse_search_results(
@@ -251,6 +306,7 @@ pub(crate) fn parse_search_results_raw(
             block_type,
             vector_score,
             fts_score,
+            graph_score: None,
         });
     }
     Ok(results)

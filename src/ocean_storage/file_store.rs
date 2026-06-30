@@ -1,11 +1,11 @@
 use serde::{Deserialize, Serialize};
+use surrealdb::types::SurrealValue;
 
 use crate::ocean_storage::error::StorageError;
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, SurrealValue)]
 pub struct FileMeta {
-    #[serde(rename = "file_id")]
-    pub id: String,
+    pub file_id: String,
     pub path: String,
     pub hash: String,
     pub size: u64,

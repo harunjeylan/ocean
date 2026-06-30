@@ -1,4 +1,5 @@
 use surrealdb::engine::local::{Db, Mem, SurrealKv};
+use surrealdb::types::SurrealValue;
 use surrealdb::Surreal;
 use tokio::runtime::Runtime;
 
@@ -11,7 +12,7 @@ pub struct SurrealStateStore {
     rt: Runtime,
 }
 
-#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(serde::Serialize, serde::Deserialize, SurrealValue)]
 struct StateRow {
     file_id: String,
     hash: String,

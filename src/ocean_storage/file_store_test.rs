@@ -1,10 +1,10 @@
 use crate::ocean_storage::file_store::{FileMeta, FileStore};
 use crate::ocean_storage::SurrealFileStore;
 
-fn make_file(id: &str) -> FileMeta {
+fn make_file(file_id: &str) -> FileMeta {
     FileMeta {
-        id: id.to_string(),
-        path: format!("/test/{}", id),
+        file_id: file_id.to_string(),
+        path: format!("/test/{}", file_id),
         hash: "abc123".into(),
         size: 1024,
         modified: 1000,
@@ -20,11 +20,11 @@ fn test_file_store_crud() {
 
     store.upsert_file(&f).unwrap();
     let got = store.get_file("f1").unwrap().unwrap();
-    assert_eq!(got.id, "f1");
+    assert_eq!(got.file_id, "f1");
     assert_eq!(got.path, "/test/f1");
 
     let got_path = store.get_file_by_path("/test/f1").unwrap().unwrap();
-    assert_eq!(got_path.id, "f1");
+    assert_eq!(got_path.file_id, "f1");
 
     let all = store.list_files().unwrap();
     assert_eq!(all.len(), 1);

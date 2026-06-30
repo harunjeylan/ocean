@@ -71,7 +71,7 @@ fn test_storage_file_and_state_integration() {
     let storage = SurrealStorage::new_memory().unwrap();
 
     let file = file_store::FileMeta {
-        id: "f1".into(),
+        file_id: "f1".into(),
         path: "/test/doc.txt".into(),
         hash: "abc".into(),
         size: 100,

@@ -85,6 +85,16 @@ pub struct VectorStore {
     rt: Runtime,
 }
 
+impl Clone for VectorStore {
+    fn clone(&self) -> Self {
+        let rt = tokio::runtime::Runtime::new().expect("Failed to create runtime for VectorStore clone");
+        Self {
+            db: self.db.clone(),
+            rt,
+        }
+    }
+}
+
 impl VectorStore {
     pub fn new_memory() -> Result<Self, StoreError> {
         let rt = Runtime::new().map_err(|e| StoreError::ConnectionFailed(e.to_string()))?;
@@ -149,10 +159,10 @@ impl VectorStore {
     pub fn insert_chunks_batch(&self, records: Vec<ChunkRecord>) -> Result<(), StoreError> {
         self.rt.block_on(async {
             for record in records {
-                let _: Option<ChunkRecord> = self
-                    .db
-                    .create(("chunk", &record.chunk_id))
-                    .content(record)
+                let id = record.chunk_id.clone();
+                self.db
+                    .query(format!("UPSERT chunk:`{}` CONTENT $data", id))
+                    .bind(("data", record))
                     .await?;
             }
             Ok::<_, surrealdb::Error>(())
@@ -242,19 +252,19 @@ impl VectorStore {
                 self.db
                     .query(format!(
                         "SELECT chunk_id, file_id, content, heading, block_type, \
-                         vector::distance::cosine(embedding, $query_vec) AS score \
-                         FROM chunk WHERE {} AND embedding <|{}|> $query_vec \
-                         ORDER BY score ASC LIMIT {}",
-                        cond, top_k, top_k
+                         vector::similarity::cosine(embedding, $query_vec) AS score \
+                         FROM chunk WHERE {} \
+                         ORDER BY score DESC LIMIT {}",
+                        cond, top_k
                     ))
             } else {
                 self.db
                     .query(format!(
                         "SELECT chunk_id, file_id, content, heading, block_type, \
-                         vector::distance::cosine(embedding, $query_vec) AS score \
-                         FROM chunk WHERE embedding <|{}|> $query_vec \
-                         ORDER BY score ASC LIMIT {}",
-                        top_k, top_k
+                         vector::similarity::cosine(embedding, $query_vec) AS score \
+                         FROM chunk \
+                         ORDER BY score DESC LIMIT {}",
+                        top_k
                     ))
             };
             q = q.bind(("query_vec", query_vec_json));
@@ -296,6 +306,28 @@ impl VectorStore {
             let mut results = q.await?;
             let rows: Vec<serde_json::Value> = results.take(0)?;
             Ok(rows)
+        })
+    }
+
+    pub fn get_chunks_by_file_and_heading(
+        &self,
+        file_id: &str,
+        heading: Option<&str>,
+    ) -> Result<Vec<ChunkRecord>, StoreError> {
+        self.rt.block_on(async {
+            let q = if let Some(h) = heading {
+                self.db
+                    .query("SELECT * FROM chunk WHERE file_id = $fid AND heading = $h ORDER BY chunk_id ASC")
+                    .bind(("fid", file_id.to_string()))
+                    .bind(("h", h.to_string()))
+            } else {
+                self.db
+                    .query("SELECT * FROM chunk WHERE file_id = $fid AND heading IS NONE ORDER BY chunk_id ASC")
+                    .bind(("fid", file_id.to_string()))
+            };
+            let mut results = q.await?;
+            let records: Vec<ChunkRecord> = results.take(0)?;
+            Ok(records)
         })
     }
 }

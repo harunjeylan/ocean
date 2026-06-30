@@ -2,7 +2,7 @@
 
 ## Project structure
 - Single crate `ocean` (edition 2024), not a workspace.
-- Library entrypoint: `src/lib.rs` exports `pub mod ocean_fs;`, `pub mod ocean_parser;`, `pub mod ocean_cli;`
+- Library entrypoint: `src/lib.rs` exports `pub mod ocean_fs;`, `pub mod ocean_parser;`, `pub mod ocean_cli;`, `pub mod ocean_chunk;`, `pub mod ocean_vector;`, `pub mod ocean_graph;`, `pub mod ocean_query;`
 - Two binary targets: `ocean` (default, `src/main.rs`) and `cli` (`src/cli.rs`, via `[[bin]]` in Cargo.toml)
 - `src/main.rs` is a thin 5-line delegate calling `ocean::ocean_cli::run()`
 - `src/cli.rs` is the explicit CLI entry point with same content
@@ -55,7 +55,7 @@
 - `run.rs` — `run()` dispatch + `cmd_*` handler functions
 - `mod.rs` — re-exports
 
-### 12 CLI commands
+### 13 CLI commands
 - `info <file>` — metadata + outline in one view
 - `metadata <file>` — all metadata fields
 - `outline <file>` — hierarchical table of contents
@@ -69,7 +69,8 @@
 - `watch <dir>` — monitor directory for file changes (Ctrl+C to stop)
 - `chunk <file> [--min-size] [--max-size] [--overlap] [--include-images] [--rows-per-chunk]` — semantic chunking
 - `index <dir> [--model] [--provider] [--ollama-url] [--openai-key] [--anthropic-key] [--gemini-key] [--db-path] [--batch-size] [--reindex]` — scan, parse, chunk, embed, and store in SurrealDB
-- `vector-search <query> [--top-k] [--hybrid] [--file-id] [--heading] [--block-type] [--model] [--provider] [--ollama-url] [--openai-key] [--anthropic-key] [--gemini-key] [--db-path]` — semantic vector search over indexed documents
+- `query <query> [--mode] [--top-k] [--context] [--context-chunks] [--expand-depth] [--rerank-by-heading] [--rerank-by-file] [--file-id] [--heading] [--block-type] [--model] [--provider] [--ollama-url] [--openai-key] [--anthropic-key] [--gemini-key] [--db-path] [--verbose]` — unified query with auto/vector/hybrid/expand modes, context windows, and execution metadata
+- `vector-search <query> [--top-k] [--hybrid] [--file-id] [--heading] [--block-type] [--model] [--provider] [--ollama-url] [--openai-key] [--anthropic-key] [--gemini-key] [--db-path]` — semantic vector search over indexed documents (unchanged)
 
 ### Skip/take slicing
 - `--skip <N>` — skip N units from start (pages for PDF/DOCX, slides for PPTX, lines for TXT/MD, paragraphs for HTML, sheets for XLSX)
@@ -97,9 +98,30 @@
 - **Index integration**: graph built automatically after vector indexing in `ocean index` (opt-out via `--no-graph`)
 - **Context expansion**: `SearchEngine::expand_results()` enriches vector search results with graph-connected chunks
 
+## Module: ocean_query (Phase 6)
+- **QueryEngine**: top-level orchestrator wrapping `VectorStore`, `SearchEngine`, `Option<ExpansionEngine>`. Constructors: `new(db_path)`, `new_memory()`. Main method: `query(query, embedder)`.
+- **Types**: `Query` (mode, top_k, expand_depth, filter, include_context, context_chunks, rerank_by_heading/file), `QueryResult` (results, context_windows, execution), `RankedChunk`, `ContextWindow`, `ContextChunk`, `ExecutionMeta`
+- **QueryMode**: Auto (heuristic), Vector (KNN only), Hybrid (vector + FTS + RRF), Expand (hybrid + graph expansion)
+- **select_mode()**: pure function — expand_depth>0→Expand, <3 words→Vector, cross-ref phrases→Expand, 3+→Hybrid, empty→Hybrid
+- **ExecutionPlan**: ordered `Vec<SubQuery>` (Vector, Fts, RrfFusion, GraphExpand, RerankByHeading, RerankByFile, BuildContext)
+- **ContextWindowBuilder**: fetches adjacent chunks in same file+heading scope, never crosses heading boundaries, clamps to [1,10] chunks
+- **Public API**: `query(engine, q, embedder)` and `query_stream(engine, q, embedder)` in `api.rs`
+- **CLI command**: `query <query> [--mode] [--top-k] [--context] [--verbose]` — unified replacement for vector-search
+- **Backwards compatibility**: `vector-search` command remains unchanged
+
+## Configuration: `.ocean/config.json`
+- Auto-loaded from `CWD/.ocean/config.json` (local, priority) and `~/.ocean/config.json` / `%APPDATA%/ocean/config.json` (global), merged with local priority.
+- **`embedding`** section: `provider`, `model`, `dimension`, `api_key` (supports `${VAR}` env syntax), `base_url`
+- **`index`** section: `batch_size`, `db_path`, `reindex`, `no_graph`, `no_references`, `no_entities`
+- **`query`** section: `top_k`, `db_path`, `mode`, `expand_depth`, `context`, `context_chunks`, `verbose`
+- `.env` files loaded from `~/.ocean/.env` → `CWD/.env` → `CWD/.ocean/.env` (last wins) at startup via dotenvy.
+- **Default DB path**: `~/.ocean/database/{cwd-kebab-case}.db` (auto-computed from CWD directory name)
+- **Resolution order**: CLI flags > config file > `.env` > hardcoded defaults.
+- **Config module**: `src/ocean_cli/config.rs` — `OceanConfig` serde struct, `resolve_env_vars()`, `load()`, `resolve_api_key()`, `resolve_db_path()`, `resolve_base_url()`, `load_env_files()`
+
 ## Commands
 ```
-cargo test                         # all (200 lib/bin/integration tests)
+cargo test                         # all (200+ lib/bin/integration tests)
 cargo test --lib                   # unit tests only (ocean_fs + ocean_parser + ocean_chunk)
 cargo test --test fs_integration   # ocean_fs integration
 cargo test --test parser_integration   # ocean_parser integration
@@ -149,4 +171,3 @@ cargo run --bin cli -- <args>      # run explicit CLI binary
 
 ## What does NOT exist yet
 - No CI/CD, no README, no opencode.json, no lint/format config, no pre-commit hooks.
-- Vector index, graph index, storage, query engine from `project-plan.md` not implemented.

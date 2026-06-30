@@ -153,3 +153,18 @@ cargo run --bin ocean -- vector-search "culture" --db-path test.db --top-k 5
 cargo run --bin ocean -- vector-search "strategy" --db-path test.db --top-k 3 --expand-depth 1
 cargo run --bin ocean -- vector-search "budget" --db-path test.db --hybrid
 ```
+
+---
+
+## Query (requires indexed DB)
+
+```
+cargo run --bin ocean -- query "culture" --db-path test.db --top-k 5
+cargo run --bin ocean -- query "culture" --db-path test.db --top-k 5 --verbose
+cargo run --bin ocean -- query "culture" --db-path test.db --top-k 5 --context --context-chunks 3
+cargo run --bin ocean -- query "strategy" --db-path test.db --top-k 5 --mode hybrid
+cargo run --bin ocean -- query "strategy" --db-path test.db --top-k 5 --mode expand --expand-depth 1
+cargo run --bin ocean -- query "strategy" --db-path test.db --top-k 5 --mode auto
+cargo run --bin ocean -- query "budget" --db-path test.db --top-k 10 --rerank-by-file
+cargo run --bin ocean -- query "budget" --db-path test.db --top-k 10 --rerank-by-heading
+```

@@ -32,6 +32,59 @@ Or with the explicit binary: `cli <COMMAND> [OPTIONS] <FILE>`. During developmen
 
 ---
 
+## Configuration
+
+Ocean automatically loads settings from multiple locations (merged, local takes priority):
+
+| Path | Scope |
+|------|-------|
+| `CWD/.ocean/config.json` | Project / current directory (highest file priority) |
+| `~/.ocean/config.json` | Global user-level (Unix) |
+| `%APPDATA%/ocean/config.json` | Global user-level (Windows) |
+
+**Environment files** are loaded at startup (last file loaded wins):
+
+| Path | Priority |
+|------|----------|
+| `~/.ocean/.env` | Lowest (global defaults) |
+| `CWD/.env` | Medium |
+| `CWD/.ocean/.env` | Highest (project overrides) |
+
+**Example `.ocean/config.json`:**
+
+```json
+{
+  "embedding": {
+    "provider": "gemini",
+    "model": "gemini-embedding-001",
+    "dimension": 3072,
+    "api_key": "${GOOGLE_GEMINI}",
+    "base_url": ""
+  },
+  "index": {
+    "batch_size": 10
+  },
+  "query": {
+    "top_k": 10,
+    "mode": "auto"
+  }
+}
+```
+
+**Default database path:** `~/.ocean/database/{cwd-kebab-case}.db` — auto-computed from current working directory name.
+
+**Resolution order** (highest to lowest):
+1. CLI flags (explicit per-invocation)
+2. `.ocean/config.json` (project-level)
+3. `~/.ocean/config.json` (global fallback)
+4. `.env` files (in priority order above)
+5. Hardcoded defaults
+
+The `${VARIABLE}` syntax resolves from environment variables (including those loaded from `.env`).
+Settings are merged — a local config only needs to specify the fields that differ from defaults.
+
+---
+
 ## Commands
 
 ### info — Document summary
@@ -418,7 +471,7 @@ Recursively scan a directory for supported documents, parse each file, split int
 
 ```
 ocean index <dir> [--model <name>] [--provider <name>] [--ollama-url <url>]
-                [--openai-key <key>] [--anthropic-key <key>] [--gemini-key <key>]
+                [--api-key <key>] [--dimension <N>]
                 [--db-path <path>] [--batch-size <N>] [--reindex]
                 [--no-graph] [--no-references] [--no-entities]
 ```
@@ -429,11 +482,10 @@ ocean index <dir> [--model <name>] [--provider <name>] [--ollama-url <url>]
 |------|---------|-------------|
 | `--model` | `nomic-embed-text` | Embedding model name |
 | `--provider` | `ollama` | Embedding provider (`ollama`, `openai`, `anthropic`, `gemini`) |
-| `--ollama-url` | `http://localhost:11434` | Ollama server URL |
-| `--openai-key` | — | OpenAI API key (required for openai provider) |
-| `--anthropic-key` | — | Anthropic API key (required for anthropic provider) |
-| `--gemini-key` | — | Gemini API key (required for gemini provider) |
-| `--db-path` | `ocean.db` | SurrealDB database path |
+| `--ollama-url` | config / heuristics | Override base URL for Ollama (falls back to config `base_url` or `http://localhost:11434`) |
+| `--api-key` | config / env / — | API key (required for openai/anthropic/gemini) |
+| `--dimension` | auto | Embedding dimension (overrides config & heuristics) |
+| `--db-path` | auto (`~/.ocean/database/{cwd}.db`) | SurrealDB database path |
 | `--batch-size` | 10 | Chunks per embedding batch |
 | `--reindex` | false | Re-index existing files (update chunks) |
 | `--no-graph` | false | Skip graph building |
@@ -456,6 +508,72 @@ ocean index ./documents
 
 ---
 
+## Query Command
+
+### query — Unified query over indexed documents
+
+Unified query command supporting auto mode selection, vector-only, hybrid (vector + FTS), and graph-expanded search with context windows and execution metadata.
+
+```
+ocean query <query> [--mode <mode>] [--top-k <N>] [--expand-depth <N>]
+                     [--context] [--context-chunks <N>]
+                     [--rerank-by-heading] [--rerank-by-file]
+                     [--file-id <id>] [--heading <prefix>] [--block-type <type>]
+                     [--model <name>] [--provider <name>]
+                     [--ollama-url <url>] [--api-key <key>] [--dimension <N>]
+                     [--db-path <path>] [--verbose]
+```
+
+**Options:**
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--mode` | `auto` | Query mode: `auto`, `vector`, `hybrid`, `expand` |
+| `--top-k` | 10 | Max results |
+| `--expand-depth` | 0 | Graph expansion depth (0 = disabled) |
+| `--context` | false | Include context windows around matched chunks |
+| `--context-chunks` | 3 | Max chunks per context window (auto-clamped 1–10) |
+| `--rerank-by-heading` | false | Penalize results from same heading for diversity |
+| `--rerank-by-file` | false | Penalize results from same file for diversity |
+| `--file-id` | — | Filter by file ID |
+| `--heading` | — | Filter by heading prefix |
+| `--block-type` | — | Filter by block type (Text, Heading, Table, etc.) |
+| `--model` | `nomic-embed-text` | Embedding model name |
+| `--provider` | `ollama` | Embedding provider |
+| `--api-key` | config / env / — | API key (required for openai/anthropic/gemini) |
+| `--dimension` | auto | Embedding dimension (overrides config & heuristics) |
+| `--db-path` | auto (`~/.ocean/database/{cwd}.db`) | SurrealDB database path |
+| `--verbose` | false | Show ExecutionMeta timing info |
+
+**Auto mode heuristics:**
+- `expand-depth > 0` → Expand
+- Short query (<3 words) → Vector
+- Contains cross-ref phrases ("related to", "reference") → Expand
+- Natural language phrase (3+ words) → Hybrid
+
+```
+ocean query "budget allocation" --mode hybrid --top-k 5 --context --verbose
+  Top 5 results for 'budget allocation':
+    1. score=0.8521 (vec=0.8521, fts=0.7234)  file=019f14f7  heading="Budget"
+       "...the annual budget allocation for 2025..."
+
+  --- Context Windows ---
+  Window 1 (anchor: chunk:abc, tokens: 685):
+    [↑] ...previous section content... (dist=-1)
+    [*] ...the annual budget allocation for 2025... (dist=0)
+    [↓] ...next section content... (dist=1)
+
+  --- Execution ---
+  Mode: Hybrid
+  Total: 5 results in 342ms
+  Vector search: 120ms
+  Fusion: 5ms
+```
+
+```
+ocean query "budget" --mode auto --rerank-by-file
+```
+
 ## Vector Search Command
 
 ### vector-search — Semantic vector search over indexed documents
@@ -466,7 +584,9 @@ Search across all indexed documents using cosine similarity, optionally with hyb
 ocean vector-search <query> [--top-k <N>] [--hybrid] [--file-id <id>]
                              [--heading <prefix>] [--block-type <type>]
                              [--model <name>] [--provider <name>]
-                             [--db-path <path>] [--expand-depth <N>]
+                             [--ollama-url <url>] [--api-key <key>]
+                             [--dimension <N>] [--db-path <path>]
+                             [--expand-depth <N>]
 ```
 
 **Options:**
@@ -480,7 +600,10 @@ ocean vector-search <query> [--top-k <N>] [--hybrid] [--file-id <id>]
 | `--block-type` | — | Filter by block type (Text, Heading, Table, etc.) |
 | `--model` | `nomic-embed-text` | Embedding model name |
 | `--provider` | `ollama` | Embedding provider |
-| `--db-path` | `ocean.db` | SurrealDB database path |
+| `--ollama-url` | config / heuristics | Override base URL for Ollama (falls back to config `base_url` or `http://localhost:11434`) |
+| `--api-key` | config / env / — | API key (required for openai/anthropic/gemini) |
+| `--dimension` | auto | Embedding dimension (overrides config & heuristics) |
+| `--db-path` | auto (`~/.ocean/database/{cwd}.db`) | SurrealDB database path |
 | `--expand-depth` | 0 | Graph expansion depth (0 = disabled) |
 
 ```

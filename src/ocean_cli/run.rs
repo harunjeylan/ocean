@@ -6,16 +6,22 @@ use clap::Parser;
 
 use crate::ocean_chunk::*;
 use crate::ocean_cli::args::{
-    ChunkArgs, Cli, Commands, GraphArgs, GraphCommands, IndexArgs, ReadArgs, VectorSearchArgs,
+    ChunkArgs, Cli, Commands, GraphArgs, GraphCommands, IndexArgs, QueryArgs, ReadArgs,
+    VectorSearchArgs,
 };
+use crate::ocean_cli::config::OceanConfig;
 use crate::ocean_cli::display::*;
 use crate::ocean_cli::walk::*;
 use crate::ocean_fs::*;
 use crate::ocean_graph::*;
 use crate::ocean_parser::*;
+use crate::ocean_query::*;
 use crate::ocean_vector::*;
 
 pub fn run() -> Result<(), String> {
+    crate::ocean_cli::config::load_env_files();
+    let config: Option<OceanConfig> = OceanConfig::load();
+
     let cli = Cli::parse();
 
     match cli.command {
@@ -31,8 +37,9 @@ pub fn run() -> Result<(), String> {
         Commands::Verify { file, hash } => cmd_verify(file, hash),
         Commands::Watch { dir } => cmd_watch(dir),
         Commands::Chunk(args) => cmd_chunk(args),
-        Commands::Index(args) => cmd_index(args),
-        Commands::VectorSearch(args) => cmd_vector_search(args),
+        Commands::Index(args) => cmd_index(args, &config),
+        Commands::Query(args) => cmd_query(args, &config),
+        Commands::VectorSearch(args) => cmd_vector_search(args, &config),
         Commands::Graph(args) => cmd_graph(args),
     }
 }
@@ -254,41 +261,92 @@ fn cmd_watch(dir: String) -> Result<(), String> {
     watcher.unwatch(handle).map_err(|e| format!("Unwatch failed: {}", e))
 }
 
+fn resolve_provider(cli: Option<&str>, config: Option<&OceanConfig>) -> String {
+    cli.or_else(|| config.and_then(|c| c.embedding.provider.as_deref()))
+        .unwrap_or("ollama")
+        .to_string()
+}
+
+fn resolve_model(cli: Option<&str>, config: Option<&OceanConfig>) -> String {
+    cli.or_else(|| config.and_then(|c| c.embedding.model.as_deref()))
+        .unwrap_or("nomic-embed-text")
+        .to_string()
+}
+
+fn resolve_index_dimension(
+    cli_dim: Option<usize>,
+    cli_provider: &str,
+    cli_model: &str,
+    config: Option<&OceanConfig>,
+) -> usize {
+    if let Some(d) = cli_dim {
+        return d;
+    }
+    if let Some(d) = config.and_then(|c| c.embedding.dimension) {
+        return d;
+    }
+    match cli_provider {
+        "openai" if cli_model.contains("large") => 3072,
+        "openai" if cli_model.contains("small") => 1536,
+        "openai" => 1536,
+        "gemini" => 3072,
+        _ => 768,
+    }
+}
+
+fn resolve_query_dimension(
+    cli_dim: Option<usize>,
+    cli_provider: &str,
+    cli_model: &str,
+    config: Option<&OceanConfig>,
+) -> usize {
+    if let Some(d) = cli_dim {
+        return d;
+    }
+    if let Some(d) = config.and_then(|c| c.embedding.dimension) {
+        return d;
+    }
+    match cli_provider {
+        "openai" if cli_model.contains("large") => 3072,
+        "openai" if cli_model.contains("small") => 1536,
+        "openai" => 1536,
+        "gemini" => 3072,
+        _ => 768,
+    }
+}
+
 fn create_embedder(
     provider: &str,
     model: &str,
-    ollama_url: &str,
-    openai_key: Option<&str>,
-    openai_url: Option<&str>,
-    anthropic_key: Option<&str>,
-    anthropic_url: Option<&str>,
-    gemini_key: Option<&str>,
+    base_url: &str,
+    api_key: Option<&str>,
 ) -> Result<Box<dyn Embedder>, String> {
     match provider {
         "ollama" => {
+            let url = if base_url.is_empty() { "http://localhost:11434" } else { base_url };
             Ok(Box::new(
-                OllamaEmbedder::new(model, ollama_url)
+                OllamaEmbedder::new(model, url)
                     .map_err(|e| format!("Failed to create Ollama embedder: {}", e))?,
             ))
         }
         "openai" => {
-            let key = openai_key.ok_or_else(|| "--openai-key is required for openai provider")?;
-            let url = openai_url.unwrap_or("https://api.openai.com/v1");
+            let key = api_key.ok_or_else(|| "--api-key is required for openai provider")?;
+            let url = if base_url.is_empty() { "https://api.openai.com/v1" } else { base_url };
             Ok(Box::new(
                 OpenAIEmbedder::new(model, url, key)
                     .map_err(|e| format!("Failed to create OpenAI embedder: {}", e))?,
             ))
         }
         "anthropic" => {
-            let key = anthropic_key.ok_or_else(|| "--anthropic-key is required for anthropic provider")?;
-            let url = anthropic_url.unwrap_or("https://api.anthropic.com/v1");
+            let key = api_key.ok_or_else(|| "--api-key is required for anthropic provider")?;
+            let url = if base_url.is_empty() { "https://api.anthropic.com/v1" } else { base_url };
             Ok(Box::new(
                 AnthropicEmbedder::new(model, url, key)
                     .map_err(|e| format!("Failed to create Anthropic embedder: {}", e))?,
             ))
         }
         "gemini" => {
-            let key = gemini_key.ok_or_else(|| "--gemini-key is required for gemini provider")?;
+            let key = api_key.ok_or_else(|| "--api-key is required for gemini provider")?;
             Ok(Box::new(
                 GeminiEmbedder::new(model, key)
                     .map_err(|e| format!("Failed to create Gemini embedder: {}", e))?,
@@ -298,7 +356,7 @@ fn create_embedder(
     }
 }
 
-fn cmd_index(args: IndexArgs) -> Result<(), String> {
+fn cmd_index(args: IndexArgs, config: &Option<OceanConfig>) -> Result<(), String> {
     let dir_path = std::path::PathBuf::from(&args.dir);
     if !dir_path.is_dir() {
         return Err(format!("directory not found: {}", args.dir));
@@ -311,18 +369,31 @@ fn cmd_index(args: IndexArgs) -> Result<(), String> {
     }
     println!("Found {} supported file(s) in '{}'. Indexing...", files.len(), args.dir);
 
-    let store = VectorStore::new_persistent(&args.db_path)
+    let provider = resolve_provider(args.provider.as_deref(), config.as_ref());
+    let model = resolve_model(args.model.as_deref(), config.as_ref());
+
+    let base_path = crate::ocean_cli::config::resolve_db_path(
+        args.db_path.as_deref(),
+        config.as_ref().and_then(|c| c.index.db_path.as_deref()),
+    );
+
+    let vector_path = format!("{}/vector.db", base_path);
+    let graph_path = format!("{}/graph.db", base_path);
+
+    let store = VectorStore::new_persistent(&vector_path)
         .map_err(|e| format!("Failed to open store: {}", e))?;
-    let dim = match args.provider.as_str() {
-        "openai" if args.model.contains("large") => 3072,
-        "openai" if args.model.contains("small") => 1536,
-        _ => 768,
-    };
+
+    let dim = resolve_index_dimension(
+        args.dimension,
+        &provider,
+        &model,
+        config.as_ref(),
+    );
     store.initialize_schema(dim)
         .map_err(|e| format!("Failed to init schema: {}", e))?;
 
     let graph_store = if !args.no_graph {
-        let gs = GraphStore::new_persistent(&args.db_path)
+        let gs = GraphStore::new_persistent(&graph_path)
             .map_err(|e| format!("Failed to open graph store: {}", e))?;
         gs.initialize_schema()
             .map_err(|e| format!("Failed to init graph schema: {}", e))?;
@@ -331,21 +402,31 @@ fn cmd_index(args: IndexArgs) -> Result<(), String> {
         None
     };
 
-    let embedder = create_embedder(&args.provider, &args.model, &args.ollama_url,
-        args.openai_key.as_deref(), args.openai_url.as_deref(),
-        args.anthropic_key.as_deref(), args.anthropic_url.as_deref(),
-        args.gemini_key.as_deref())?;
+    let api_key = crate::ocean_cli::config::resolve_api_key(
+        args.api_key.as_deref(),
+        config.as_ref().and_then(|c| c.embedding.api_key.as_deref()),
+        None,
+    );
+
+    let base_url = crate::ocean_cli::config::resolve_base_url(
+        &provider,
+        args.ollama_url.as_deref(),
+        config.as_ref().and_then(|c| c.embedding.base_url.as_deref()),
+    );
+
+    let embedder = create_embedder(&provider, &model, &base_url,
+        api_key.as_deref())?;
 
     let pipeline = IndexPipeline::new(store);
 
     let config = IndexConfig {
         batch_size: args.batch_size,
         reindex: args.reindex,
-        model: args.model.clone(),
+        model: model.clone(),
         dimension: embedder.dimension(),
-        ollama_url: Some(args.ollama_url.clone()),
-        openai_api_key: args.openai_key.clone(),
-        db_path: args.db_path.clone(),
+        ollama_url: Some(base_url.clone()),
+        openai_api_key: api_key,
+        db_path: vector_path.clone(),
     };
 
     let graph_config = GraphConfig {
@@ -407,6 +488,23 @@ fn cmd_index(args: IndexArgs) -> Result<(), String> {
                     "  Indexed: {} embedded, {} skipped, {} failed ({}ms)",
                     report.embedded, report.skipped, report.failed, report.duration_ms
                 );
+                for err in report.errors.iter().take(3) {
+                    println!("    error: {}", err);
+                }
+                if report.errors.len() > 3 {
+                    println!("    ... and {} more errors", report.errors.len() - 3);
+                }
+                let revision_err = report.errors.iter().any(|e| {
+                    let s = e.to_string();
+                    s.contains("Invalid revision") || s.contains("revision")
+                });
+                if revision_err && report.embedded == 0 && report.failed > 0 {
+                    println!(
+                        "    hint: database revision mismatch. Delete and re-run:\n    \
+                         Remove-Item -Recurse -Force \"{}\"",
+                        base_path
+                    );
+                }
             }
             Err(e) => {
                 println!("  Index error: {}", e);
@@ -414,10 +512,8 @@ fn cmd_index(args: IndexArgs) -> Result<(), String> {
         }
 
         if let Some(ref gs) = graph_store {
-            if args.reindex {
-                let _ = gs.delete_nodes_by_file(&file_id);
-                let _ = gs.delete_edges_by_file(&file_id);
-            }
+            let _ = gs.delete_nodes_by_file(&file_id);
+            let _ = gs.delete_edges_by_file(&file_id);
 
             let (nodes, edges) = GraphBuilder::from_chunks(&chunks, &file_id, &graph_config);
             let node_count = nodes.len();
@@ -434,11 +530,11 @@ fn cmd_index(args: IndexArgs) -> Result<(), String> {
 
             if let Err(e) = gs.insert_nodes_batch(node_pairs) {
                 println!("  Graph node insert error: {}", e);
-            } else if let Err(e) = gs.insert_edges_batch(edge_pairs) {
-                println!("  Graph edge insert error: {}", e);
-            } else {
-                println!("  Graph: {} nodes, {} edges", node_count, edge_count);
             }
+            if let Err(e) = gs.insert_edges_batch(edge_pairs) {
+                println!("  Graph edge insert error: {}", e);
+            }
+            println!("  Graph: {} nodes, {} edges", node_count, edge_count);
         }
     }
 
@@ -450,15 +546,115 @@ fn cmd_index(args: IndexArgs) -> Result<(), String> {
     Ok(())
 }
 
-fn cmd_vector_search(args: VectorSearchArgs) -> Result<(), String> {
-    let store = VectorStore::new_persistent(&args.db_path)
+fn cmd_query(args: QueryArgs, config: &Option<OceanConfig>) -> Result<(), String> {
+    let provider = resolve_provider(args.provider.as_deref(), config.as_ref());
+    let model = resolve_model(args.model.as_deref(), config.as_ref());
+
+    let mode = match args.mode.as_deref().or(config.as_ref().and_then(|c| c.query.mode.as_deref())) {
+        None | Some("auto") => QueryMode::Auto,
+        Some("vector") => QueryMode::Vector,
+        Some("hybrid") => QueryMode::Hybrid,
+        Some("expand") => QueryMode::Expand,
+        Some(other) => return Err(format!("invalid mode '{}'. Use: auto, vector, hybrid, expand", other)),
+    };
+
+    let base_path = crate::ocean_cli::config::resolve_db_path(
+        args.db_path.as_deref(),
+        config.as_ref().and_then(|c| c.query.db_path.as_deref()),
+    );
+
+    let dimension = resolve_query_dimension(
+        args.dimension,
+        &provider,
+        &model,
+        config.as_ref(),
+    );
+    let engine = QueryEngine::new_with_paths(
+        &format!("{}/vector.db", base_path),
+        &format!("{}/graph.db", base_path),
+        dimension,
+    )
+    .map_err(|e| format!("Failed to create query engine: {}", e))?;
+
+    let api_key = crate::ocean_cli::config::resolve_api_key(
+        args.api_key.as_deref(),
+        config.as_ref().and_then(|c| c.embedding.api_key.as_deref()),
+        None,
+    );
+
+    let base_url = crate::ocean_cli::config::resolve_base_url(
+        &provider,
+        args.ollama_url.as_deref(),
+        config.as_ref().and_then(|c| c.embedding.base_url.as_deref()),
+    );
+
+    let embedder = create_embedder(&provider, &model, &base_url,
+        api_key.as_deref())?;
+
+    let mut filter = crate::ocean_vector::search::SearchFilter::new();
+    if let Some(ref fid) = args.file_id {
+        filter = filter.with_file_id(fid);
+    }
+    if let Some(ref h) = args.heading {
+        filter = filter.with_heading(h);
+    }
+    if let Some(ref bt) = args.block_type {
+        filter = filter.with_block_type(bt);
+    }
+
+    let has_filter = filter.file_id.is_some()
+        || filter.heading_prefix.is_some()
+        || filter.block_type.is_some();
+
+    let q = Query {
+        text: args.query.clone(),
+        mode,
+        top_k: args.top_k,
+        expand_depth: args.expand_depth,
+        filter: if has_filter { Some(filter) } else { None },
+        include_context: args.context,
+        context_chunks: args.context_chunks.unwrap_or(3),
+        rerank_by_heading: args.rerank_by_heading,
+        rerank_by_file: args.rerank_by_file,
+    };
+
+    let result = engine.query(q, &*embedder)
+        .map_err(|e| format!("Query failed: {}", e))?;
+
+    print_query_result(&result, args.verbose);
+    Ok(())
+}
+
+fn cmd_vector_search(args: VectorSearchArgs, config: &Option<OceanConfig>) -> Result<(), String> {
+    let provider = resolve_provider(args.provider.as_deref(), config.as_ref());
+    let model = resolve_model(args.model.as_deref(), config.as_ref());
+
+    let base_path = crate::ocean_cli::config::resolve_db_path(
+        args.db_path.as_deref(),
+        config.as_ref().and_then(|c| c.query.db_path.as_deref()),
+    );
+
+    let vector_path = format!("{}/vector.db", base_path);
+    let graph_path = format!("{}/graph.db", base_path);
+
+    let store = VectorStore::new_persistent(&vector_path)
         .map_err(|e| format!("Failed to open store: {}", e))?;
     let engine = SearchEngine::new(store);
 
-    let embedder = create_embedder(&args.provider, &args.model, &args.ollama_url,
-        args.openai_key.as_deref(), args.openai_url.as_deref(),
-        args.anthropic_key.as_deref(), args.anthropic_url.as_deref(),
-        args.gemini_key.as_deref())?;
+    let api_key = crate::ocean_cli::config::resolve_api_key(
+        args.api_key.as_deref(),
+        config.as_ref().and_then(|c| c.embedding.api_key.as_deref()),
+        None,
+    );
+
+    let base_url = crate::ocean_cli::config::resolve_base_url(
+        &provider,
+        args.ollama_url.as_deref(),
+        config.as_ref().and_then(|c| c.embedding.base_url.as_deref()),
+    );
+
+    let embedder = create_embedder(&provider, &model, &base_url,
+        api_key.as_deref())?;
 
     let results = if args.hybrid {
         let mut filter = SearchFilter::new();
@@ -499,7 +695,7 @@ fn cmd_vector_search(args: VectorSearchArgs) -> Result<(), String> {
     let results = match results {
         Ok(mut results) => {
             if args.expand_depth > 0 {
-                if let Ok(graph_store) = GraphStore::new_persistent(&args.db_path) {
+                if let Ok(graph_store) = GraphStore::new_persistent(&graph_path) {
                     if graph_store.initialize_schema().is_ok() {
                         let expansion = ExpansionEngine::new(graph_store);
                         if let Ok(expanded) = engine.expand_results(&results, &expansion, args.expand_depth) {
@@ -588,15 +784,23 @@ fn cmd_chunk(args: ChunkArgs) -> Result<(), String> {
 }
 
 fn cmd_graph(args: GraphArgs) -> Result<(), String> {
+    let resolve = |db: Option<String>| -> String {
+        let base = crate::ocean_cli::config::resolve_db_path(db.as_deref(), None);
+        format!("{}/graph.db", base)
+    };
     match args.command {
-        GraphCommands::Info { file, db_path } => cmd_graph_info(file, db_path),
+        GraphCommands::Info { file, db_path } => {
+            cmd_graph_info(file, resolve(db_path))
+        }
         GraphCommands::Expand { node_id, depth, direction, db_path } => {
-            cmd_graph_expand(node_id, depth, direction, db_path)
+            cmd_graph_expand(node_id, depth, direction, resolve(db_path))
         }
         GraphCommands::Path { from, to, max_depth, db_path } => {
-            cmd_graph_path(from, to, max_depth, db_path)
+            cmd_graph_path(from, to, max_depth, resolve(db_path))
         }
-        GraphCommands::Stats { db_path } => cmd_graph_stats(db_path),
+        GraphCommands::Stats { db_path } => {
+            cmd_graph_stats(resolve(db_path))
+        }
     }
 }
 

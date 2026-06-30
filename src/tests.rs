@@ -37,3 +37,10 @@ mod graph_builder_spec;
 mod graph_entity_spec;
 #[path = "ocean_graph/expansion_test.rs"]
 mod graph_expansion_spec;
+
+#[path = "ocean_query/types_test.rs"]
+mod query_types_spec;
+#[path = "ocean_query/engine_test.rs"]
+mod query_engine_spec;
+#[path = "ocean_query/context_test.rs"]
+mod query_context_spec;

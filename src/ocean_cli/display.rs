@@ -1,4 +1,5 @@
 use crate::ocean_graph::types::{Node, NodeType, Edge, Subgraph};
+use crate::ocean_query::types::QueryResult;
 
 use crate::ocean_parser::*;
 
@@ -93,6 +94,76 @@ pub fn print_outline(outline: &Outline, indent: usize) {
         if !entry.children.is_empty() {
             let child_outline = Outline { entries: entry.children.clone() };
             print_outline(&child_outline, indent + 2);
+        }
+    }
+}
+
+pub fn print_query_result(result: &QueryResult, verbose: bool) {
+    if result.results.is_empty() {
+        println!("No results found.");
+        return;
+    }
+
+    println!("Top {} results:", result.results.len());
+    for (i, r) in result.results.iter().enumerate() {
+        let content_short = if r.content.len() > 120 {
+            format!("{}...", &r.content[..120])
+        } else {
+            r.content.clone()
+        };
+        let heading = r.heading.as_deref().unwrap_or("(none)");
+        let graph_info = match r.graph_score {
+            Some(gs) => format!(" graph={:.4}", gs),
+            None => String::new(),
+        };
+        let score_info = if let (Some(vs), Some(fs)) = (r.vector_score, r.fts_score) {
+            format!("score={:.4} (vec={:.4}, fts={:.4}){}", r.score, vs, fs, graph_info)
+        } else {
+            format!("score={:.4}{}", r.score, graph_info)
+        };
+        println!(
+            "  {}. {}  file={}  heading=\"{}\"",
+            i + 1,
+            score_info,
+            &r.file_id[..r.file_id.len().min(8)],
+            heading,
+        );
+        println!("     \"{}\"", content_short);
+    }
+
+    if !result.context_windows.is_empty() {
+        println!();
+        println!("--- Context Windows ---");
+        for (i, cw) in result.context_windows.iter().enumerate() {
+            println!("Window {} (anchor: {}, tokens: {}):", i + 1, cw.anchor_chunk_id, cw.total_tokens);
+            for chunk in &cw.chunks {
+                let prefix = if chunk.distance_from_anchor == 0 {
+                    "[*]"
+                } else if chunk.distance_from_anchor < 0 {
+                    "[↑]"
+                } else {
+                    "[↓]"
+                };
+                let short = if chunk.content.len() > 80 {
+                    format!("{}...", &chunk.content[..80])
+                } else {
+                    chunk.content.clone()
+                };
+                println!("  {} {} (dist={})", prefix, short, chunk.distance_from_anchor);
+            }
+        }
+    }
+
+    if verbose {
+        let meta = &result.execution;
+        println!();
+        println!("--- Execution ---");
+        println!("Mode: {:?}", meta.query_mode);
+        println!("Total: {} results in {}ms", meta.total_results, meta.total_time_ms);
+        println!("Vector search: {}ms", meta.vector_search_time_ms);
+        println!("Fusion: {}ms", meta.fusion_time_ms);
+        if let Some(gt) = meta.graph_expand_time_ms {
+            println!("Graph expand: {}ms", gt);
         }
     }
 }

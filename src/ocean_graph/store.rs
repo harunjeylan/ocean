@@ -192,10 +192,9 @@ impl GraphStore {
         self.rt.block_on(async {
             for (node, file_id) in nodes {
                 let record = GraphStore::node_to_record(&node, &file_id);
-                let _: Option<GraphNodeRecord> = self
-                    .db
-                    .create(("graph_node", &record.node_id))
-                    .content(record)
+                self.db
+                    .query(format!("UPSERT graph_node:`{}` CONTENT $data", record.node_id))
+                    .bind(("data", record))
                     .await?;
             }
             Ok::<_, surrealdb::Error>(())
@@ -211,10 +210,9 @@ impl GraphStore {
                     edge.from, edge.to, format!("{:?}", edge.relation)
                 );
                 let record = GraphStore::edge_to_record(&edge, &file_id, &edge_id);
-                let _: Option<GraphEdgeRecord> = self
-                    .db
-                    .create(("graph_edge", &edge_id))
-                    .content(record)
+                self.db
+                    .query(format!("UPSERT graph_edge:`{}` CONTENT $data", edge_id))
+                    .bind(("data", record))
                     .await?;
             }
             Ok::<_, surrealdb::Error>(())

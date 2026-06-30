@@ -1,0 +1,16 @@
+{
+  "embedding": {
+    "provider": "gemini",
+    "model": "gemini-embedding-001",
+    "dimension": 3072,
+    "api_key": "${GOOGLE_GEMINI}",
+    "base_url": ""
+  },
+  "index": {
+    "batch_size": 10
+  },
+  "query": {
+    "top_k": 10,
+    "mode": "auto"
+  }
+}

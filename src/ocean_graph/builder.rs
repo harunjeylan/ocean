@@ -45,7 +45,7 @@ impl GraphBuilder {
             entity_names_dedup.dedup_by(|a, b| a.to_lowercase() == b.to_lowercase());
 
             for name in &entity_names_dedup {
-                let entity_id = Self::entity_id(name);
+                let entity_id = Self::entity_id(file_id, name);
                 nodes.push(Node {
                     id: entity_id.clone(),
                     node_type: NodeType::Entity,
@@ -60,7 +60,7 @@ impl GraphBuilder {
                     if chunk.content.to_lowercase().contains(&name.to_lowercase()) {
                         edges.push(Edge {
                             from: chunk_node_id.clone(),
-                            to: Self::entity_id(name),
+                            to: Self::entity_id(file_id, name),
                             relation: RelationType::Mentions,
                             weight: 0.5,
                             metadata: None,
@@ -196,8 +196,9 @@ impl GraphBuilder {
         format!("heading:{}:{}", file_id, &hash[..16])
     }
 
-    fn entity_id(name: &str) -> String {
+    fn entity_id(file_id: &str, name: &str) -> String {
         let mut hasher = Sha256::new();
+        hasher.update(file_id.as_bytes());
         hasher.update(name.as_bytes());
         let hash = format!("{:x}", hasher.finalize());
         format!("entity:{}", &hash[..16])

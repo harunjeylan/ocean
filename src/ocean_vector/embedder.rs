@@ -454,10 +454,12 @@ impl GeminiEmbedder {
             .build()
             .map_err(|e| EmbedderError::ConnectionFailed(e.to_string()))?;
         let dim = match model {
+            "gemini-embedding-001" => 3072,
+            "gemini-embedding-2" => 3072,
             "text-embedding-004" => 768,
             "text-embedding-005" => 768,
             "text-multilingual-embedding-002" => 768,
-            _ => 768,
+            _ => 3072,
         };
         Ok(Self {
             api_key: api_key.to_string(),

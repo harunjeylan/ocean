@@ -142,23 +142,14 @@ impl IndexPipeline {
                         })
                         .collect();
 
-                    let ok = if config.reindex {
-                        let mut all_ok = true;
-                        for r in &records {
-                            if let Err(e) = self.store.upsert_chunk(r.clone()) {
+                    for r in &records {
+                        match self.store.upsert_chunk(r.clone()) {
+                            Ok(_) => embedded += 1,
+                            Err(e) => {
+                                failed += 1;
                                 errors.push(IndexError::Store(e));
-                                all_ok = false;
                             }
                         }
-                        all_ok
-                    } else {
-                        self.store.insert_chunks_batch(records).is_ok()
-                    };
-
-                    if ok {
-                        embedded += batch_len;
-                    } else {
-                        failed += batch_len;
                     }
                 }
                 Err(e) => {

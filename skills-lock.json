@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "skills": {
+    "surrealdb": {
+      "source": "24601/surreal-skills",
+      "sourceType": "github",
+      "skillPath": "SKILL.md",
+      "computedHash": "35ae08ebe4aa15c5c9d79f26166703921f5141d7644f38efee15847ffa7e8dfb"
+    }
+  }
+}

@@ -22,6 +22,7 @@ pub enum Commands {
     Watch { dir: String },
     Chunk(ChunkArgs),
     Index(IndexArgs),
+    Query(QueryArgs),
     VectorSearch(VectorSearchArgs),
     Graph(GraphArgs),
 }
@@ -36,8 +37,8 @@ pub struct GraphArgs {
 pub enum GraphCommands {
     Info {
         file: String,
-        #[arg(long, default_value = "ocean.db")]
-        db_path: String,
+        #[arg(long)]
+        db_path: Option<String>,
     },
     Expand {
         node_id: String,
@@ -45,20 +46,20 @@ pub enum GraphCommands {
         depth: usize,
         #[arg(long, default_value = "both")]
         direction: String,
-        #[arg(long, default_value = "ocean.db")]
-        db_path: String,
+        #[arg(long)]
+        db_path: Option<String>,
     },
     Path {
         from: String,
         to: String,
         #[arg(long, default_value_t = 5)]
         max_depth: usize,
-        #[arg(long, default_value = "ocean.db")]
-        db_path: String,
+        #[arg(long)]
+        db_path: Option<String>,
     },
     Stats {
-        #[arg(long, default_value = "ocean.db")]
-        db_path: String,
+        #[arg(long)]
+        db_path: Option<String>,
     },
 }
 
@@ -107,24 +108,18 @@ pub struct ChunkArgs {
 #[derive(Args)]
 pub struct IndexArgs {
     pub dir: String,
-    #[arg(long, default_value = "nomic-embed-text")]
-    pub model: String,
-    #[arg(long, default_value = "ollama")]
-    pub provider: String,
-    #[arg(long, default_value = "http://localhost:11434")]
-    pub ollama_url: String,
     #[arg(long)]
-    pub openai_key: Option<String>,
+    pub model: Option<String>,
     #[arg(long)]
-    pub openai_url: Option<String>,
+    pub provider: Option<String>,
     #[arg(long)]
-    pub anthropic_key: Option<String>,
+    pub ollama_url: Option<String>,
     #[arg(long)]
-    pub anthropic_url: Option<String>,
+    pub api_key: Option<String>,
     #[arg(long)]
-    pub gemini_key: Option<String>,
-    #[arg(long, default_value = "ocean.db")]
-    pub db_path: String,
+    pub dimension: Option<usize>,
+    #[arg(long)]
+    pub db_path: Option<String>,
     #[arg(long, default_value_t = 10)]
     pub batch_size: usize,
     #[arg(long)]
@@ -135,6 +130,45 @@ pub struct IndexArgs {
     pub no_references: bool,
     #[arg(long)]
     pub no_entities: bool,
+}
+
+#[derive(Args)]
+pub struct QueryArgs {
+    pub query: String,
+    #[arg(long)]
+    pub mode: Option<String>,
+    #[arg(long, default_value_t = 10)]
+    pub top_k: usize,
+    #[arg(long, default_value_t = 0)]
+    pub expand_depth: usize,
+    #[arg(long)]
+    pub context: bool,
+    #[arg(long)]
+    pub context_chunks: Option<usize>,
+    #[arg(long)]
+    pub file_id: Option<String>,
+    #[arg(long)]
+    pub heading: Option<String>,
+    #[arg(long)]
+    pub block_type: Option<String>,
+    #[arg(long)]
+    pub rerank_by_heading: bool,
+    #[arg(long)]
+    pub rerank_by_file: bool,
+    #[arg(long)]
+    pub verbose: bool,
+    #[arg(long)]
+    pub model: Option<String>,
+    #[arg(long)]
+    pub provider: Option<String>,
+    #[arg(long)]
+    pub ollama_url: Option<String>,
+    #[arg(long)]
+    pub api_key: Option<String>,
+    #[arg(long)]
+    pub dimension: Option<usize>,
+    #[arg(long)]
+    pub db_path: Option<String>,
 }
 
 #[derive(Args)]
@@ -150,24 +184,18 @@ pub struct VectorSearchArgs {
     pub heading: Option<String>,
     #[arg(long)]
     pub block_type: Option<String>,
-    #[arg(long, default_value = "nomic-embed-text")]
-    pub model: String,
-    #[arg(long, default_value = "ollama")]
-    pub provider: String,
-    #[arg(long, default_value = "http://localhost:11434")]
-    pub ollama_url: String,
     #[arg(long)]
-    pub openai_key: Option<String>,
+    pub model: Option<String>,
     #[arg(long)]
-    pub openai_url: Option<String>,
+    pub provider: Option<String>,
     #[arg(long)]
-    pub anthropic_key: Option<String>,
+    pub ollama_url: Option<String>,
     #[arg(long)]
-    pub anthropic_url: Option<String>,
+    pub api_key: Option<String>,
     #[arg(long)]
-    pub gemini_key: Option<String>,
-    #[arg(long, default_value = "ocean.db")]
-    pub db_path: String,
+    pub dimension: Option<usize>,
+    #[arg(long)]
+    pub db_path: Option<String>,
     #[arg(long, default_value_t = 0)]
     pub expand_depth: usize,
 }

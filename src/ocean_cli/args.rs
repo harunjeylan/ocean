@@ -130,6 +130,8 @@ pub struct IndexArgs {
     pub no_references: bool,
     #[arg(long)]
     pub no_entities: bool,
+    #[arg(long)]
+    pub watch: bool,
 }
 
 #[derive(Args)]

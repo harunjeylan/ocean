@@ -53,3 +53,12 @@ mod storage_integration_spec;
 mod storage_vector_store_spec;
 #[path = "ocean_storage/graph_store_test.rs"]
 mod storage_graph_store_spec;
+
+#[path = "ocean_index/config_test.rs"]
+mod index_config_spec;
+#[path = "ocean_index/report_test.rs"]
+mod index_report_spec;
+#[path = "ocean_index/progress_test.rs"]
+mod index_progress_spec;
+#[path = "ocean_index/orchestrator_test.rs"]
+mod index_orchestrator_spec;

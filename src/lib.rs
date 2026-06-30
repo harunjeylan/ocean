@@ -6,6 +6,8 @@ pub mod ocean_vector;
 pub mod ocean_graph;
 pub mod ocean_query;
 pub mod ocean_storage;
+pub mod ocean_index;
+pub mod ocean_api;
 
 #[cfg(test)]
 mod tests;

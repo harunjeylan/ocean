@@ -1,5 +1,5 @@
 fn main() {
-    match ocean::ocean_cli::run() {
+    match ocean_doc::ocean_cli::run() {
         Ok(()) => {}
         Err(msg) => {
             eprintln!("Error: {}", msg);

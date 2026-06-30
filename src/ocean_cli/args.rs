@@ -38,6 +38,13 @@ pub enum Commands {
     VectorSearch(VectorSearchArgs),
     Graph(GraphArgs),
     Config(ConfigArgs),
+    Init(InitArgs),
+}
+
+#[derive(Args)]
+pub struct InitArgs {
+    #[arg(long)]
+    pub dir: Option<String>,
 }
 
 #[derive(Args)]

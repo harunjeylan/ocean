@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use ocean::ocean_parser::*;
+use ocean_doc::ocean_parser::*;
 
 const TEST_DIR: &str = "tests/test-cwd";
 

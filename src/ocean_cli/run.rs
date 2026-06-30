@@ -20,6 +20,7 @@ use crate::ocean_cli::display::*;
 use crate::ocean_cli::events::{global_emitter, set_global_emitter, ConsoleEmitter, JsonEmitter, MultiEmitter, OutputTarget, SystemEvent};
 use crate::ocean_storage::readonly::ReadOnlyGuard;
 use crate::ocean_cli::metrics::{global_metrics, print_metrics};
+use crate::ocean_cli::init::cmd_init;
 use crate::ocean_cli::runtime::RuntimeMode;
 use crate::ocean_fs::*;
 use crate::ocean_parser::*;
@@ -82,6 +83,7 @@ pub fn run() -> Result<(), String> {
         Commands::VectorSearch(args) => cmd_vector_search(args, &config),
         Commands::Graph(args) => cmd_graph(args),
         Commands::Config(args) => cmd_config(args, &config),
+        Commands::Init(args) => cmd_init(args.dir),
     }
 }
 

@@ -90,3 +90,6 @@ mod cache_embedding_spec;
 mod cache_query_spec;
 #[path = "ocean_cache/graph_cache_test.rs"]
 mod cache_graph_spec;
+
+#[path = "ocean_cli/init_test.rs"]
+mod cli_init_spec;

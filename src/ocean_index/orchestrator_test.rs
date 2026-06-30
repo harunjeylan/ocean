@@ -1,6 +1,13 @@
 use std::sync::Arc;
 
 use super::embedder_spec::MockEmbedder;
+
+fn test_dir() -> String {
+    let mut p = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    p.push("tests");
+    p.push("test-cwd");
+    p.to_string_lossy().to_string()
+}
 use crate::ocean_chunk::ChunkConfig;
 use crate::ocean_graph::GraphConfig;
 use crate::ocean_index::config::{BackpressureConfig, IndexConfig, IndexMode, RateLimiterConfig};
@@ -52,7 +59,7 @@ fn orchestrator_run_full_mode() {
 
     let config = IndexConfig {
         mode: IndexMode::Full,
-        dir: "C:\\Users\\harun\\Desktop\\Developments\\ocean\\tests\\test-cwd".into(),
+        dir: test_dir(),
         chunk_config: ChunkConfig {
             min_tokens: 50,
             max_tokens: 500,
@@ -84,7 +91,7 @@ fn orchestrator_incremental_skips_unchanged_files() {
 
     let config = IndexConfig {
         mode: IndexMode::Full,
-        dir: "C:\\Users\\harun\\Desktop\\Developments\\ocean\\tests\\test-cwd".into(),
+        dir: test_dir(),
         chunk_config: ChunkConfig {
             min_tokens: 50,
             max_tokens: 500,
@@ -119,7 +126,7 @@ fn orchestrator_full_reindexes_all_files() {
 
     let config = IndexConfig {
         mode: IndexMode::Full,
-        dir: "C:\\Users\\harun\\Desktop\\Developments\\ocean\\tests\\test-cwd".into(),
+        dir: test_dir(),
         chunk_config: ChunkConfig {
             min_tokens: 50,
             max_tokens: 500,
@@ -149,7 +156,7 @@ fn orchestrator_report_aggregation_valid() {
 
     let config = IndexConfig {
         mode: IndexMode::Full,
-        dir: "C:\\Users\\harun\\Desktop\\Developments\\ocean\\tests\\test-cwd".into(),
+        dir: test_dir(),
         chunk_config: ChunkConfig {
             min_tokens: 50,
             max_tokens: 500,

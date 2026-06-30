@@ -13,28 +13,28 @@ fn test_end_to_end_scan_hash_filter_normalize() {
     fs::write(dir.path().join("ignore.exe"), b"should be ignored").unwrap();
     fs::write(dir.path().join(".hidden.md"), b"hidden file").unwrap();
 
-    let results = ocean::ocean_fs::scan_dir(dir.path().to_str().unwrap()).unwrap();
+    let results = ocean_doc::ocean_fs::scan_dir(dir.path().to_str().unwrap()).unwrap();
     assert_eq!(results.len(), 3);
 
     for meta in &results {
         assert_eq!(meta.hash.len(), 64);
         assert!(meta.modified > 0);
 
-        let normalized = ocean::ocean_fs::normalize(meta.clone());
+        let normalized = ocean_doc::ocean_fs::normalize(meta.clone());
         assert_eq!(normalized.id, meta.id);
         assert_eq!(normalized.meta.hash, meta.hash);
 
         match meta.extension.as_str() {
             "pdf" => {
-                assert_eq!(normalized.category, ocean::ocean_fs::FileCategory::Document);
+                assert_eq!(normalized.category, ocean_doc::ocean_fs::FileCategory::Document);
                 assert_eq!(normalized.mime_type, "application/pdf");
             }
             "txt" => {
-                assert_eq!(normalized.category, ocean::ocean_fs::FileCategory::Text);
+                assert_eq!(normalized.category, ocean_doc::ocean_fs::FileCategory::Text);
                 assert_eq!(normalized.mime_type, "text/plain");
             }
             "png" => {
-                assert_eq!(normalized.category, ocean::ocean_fs::FileCategory::Image);
+                assert_eq!(normalized.category, ocean_doc::ocean_fs::FileCategory::Image);
                 assert_eq!(normalized.mime_type, "image/png");
             }
             _ => panic!("unexpected extension: {}", meta.extension),
@@ -50,8 +50,8 @@ fn test_deterministic_scan() {
     fs::write(dir.path().join("a.txt"), b"aaa").unwrap();
     fs::write(dir.path().join("sub").join("b.txt"), b"bbb").unwrap();
 
-    let results1 = ocean::ocean_fs::scan_dir(dir.path().to_str().unwrap()).unwrap();
-    let results2 = ocean::ocean_fs::scan_dir(dir.path().to_str().unwrap()).unwrap();
+    let results1 = ocean_doc::ocean_fs::scan_dir(dir.path().to_str().unwrap()).unwrap();
+    let results2 = ocean_doc::ocean_fs::scan_dir(dir.path().to_str().unwrap()).unwrap();
 
     let mut paths1: Vec<&str> = results1.iter().map(|m| m.path.as_str()).collect();
     let mut paths2: Vec<&str> = results2.iter().map(|m| m.path.as_str()).collect();
@@ -69,8 +69,8 @@ fn test_deterministic_scan() {
 
 #[test]
 fn test_path_resolver_move_chain() {
-    let resolver = ocean::ocean_fs::PathResolver::in_memory().unwrap();
-    let file_id = ocean::ocean_fs::generate_file_id();
+    let resolver = ocean_doc::ocean_fs::PathResolver::in_memory().unwrap();
+    let file_id = ocean_doc::ocean_fs::generate_file_id();
 
     resolver
         .record_move(&file_id, "/docs/v1/report.pdf", "/docs/v2/report.pdf")
@@ -103,7 +103,7 @@ fn test_filter_ignores_unsupported_dirs() {
     fs::write(dir.path().join("src").join("main.rs"), b"fn main() {}").unwrap();
     fs::write(dir.path().join("readme.md"), b"# Readme").unwrap();
 
-    let results = ocean::ocean_fs::scan_dir(dir.path().to_str().unwrap()).unwrap();
+    let results = ocean_doc::ocean_fs::scan_dir(dir.path().to_str().unwrap()).unwrap();
     assert_eq!(results.len(), 1);
     assert!(results[0].path.contains("readme.md"));
 }
@@ -117,7 +117,7 @@ fn test_large_directory_scan() {
         f.write_all(format!("content_{}", i).as_bytes()).unwrap();
     }
 
-    let results = ocean::ocean_fs::scan_dir(dir.path().to_str().unwrap()).unwrap();
+    let results = ocean_doc::ocean_fs::scan_dir(dir.path().to_str().unwrap()).unwrap();
     assert_eq!(results.len(), 500);
 
     let unique_ids: HashSet<&str> =
@@ -131,11 +131,11 @@ fn test_hash_consistent_across_normalize() {
     let path = dir.path().join("test.md");
     fs::write(&path, b"# Markdown Content").unwrap();
 
-    let metas = ocean::ocean_fs::scan_dir(dir.path().to_str().unwrap()).unwrap();
+    let metas = ocean_doc::ocean_fs::scan_dir(dir.path().to_str().unwrap()).unwrap();
     assert_eq!(metas.len(), 1);
 
-    let normalized = ocean::ocean_fs::normalize(metas[0].clone());
-    assert_eq!(normalized.meta.hash, ocean::ocean_fs::hasher::hash_file(path.to_str().unwrap()).unwrap());
+    let normalized = ocean_doc::ocean_fs::normalize(metas[0].clone());
+    assert_eq!(normalized.meta.hash, ocean_doc::ocean_fs::hasher::hash_file(path.to_str().unwrap()).unwrap());
 }
 
 #[test]
@@ -145,7 +145,7 @@ fn test_no_duplicate_ids_in_scan() {
     fs::write(dir.path().join("b.txt"), b"b").unwrap();
     fs::write(dir.path().join("c.txt"), b"c").unwrap();
 
-    let results = ocean::ocean_fs::scan_dir(dir.path().to_str().unwrap()).unwrap();
+    let results = ocean_doc::ocean_fs::scan_dir(dir.path().to_str().unwrap()).unwrap();
     assert_eq!(results.len(), 3);
 
     let id_set: HashSet<&str> =
@@ -159,9 +159,9 @@ fn test_verify_hash() {
     let path = dir.path().join("test.txt");
     fs::write(&path, b"verify me").unwrap();
 
-    let hash = ocean::ocean_fs::hasher::hash_file(path.to_str().unwrap()).unwrap();
-    assert!(ocean::ocean_fs::hasher::verify_hash(path.to_str().unwrap(), &hash));
-    assert!(!ocean::ocean_fs::hasher::verify_hash(
+    let hash = ocean_doc::ocean_fs::hasher::hash_file(path.to_str().unwrap()).unwrap();
+    assert!(ocean_doc::ocean_fs::hasher::verify_hash(path.to_str().unwrap(), &hash));
+    assert!(!ocean_doc::ocean_fs::hasher::verify_hash(
         path.to_str().unwrap(),
         "0000000000000000000000000000000000000000000000000000000000000000"
     ));

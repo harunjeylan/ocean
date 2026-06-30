@@ -1,0 +1,26 @@
+# Auto detect text files
+* text=auto
+
+# Rust
+*.rs text diff=rust
+*.toml text
+*.lock text
+
+# Binary files
+*.pdf binary
+*.docx binary
+*.pptx binary
+*.xlsx binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+
+# Scripts
+*.sh text eol=lf
+*.ps1 text eol=crlf
+
+# GitHub
+*.md text
+*.yml text
+*.yaml text
+*.json text

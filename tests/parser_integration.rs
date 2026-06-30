@@ -1,7 +1,7 @@
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use ocean::ocean_parser::*;
+use ocean_doc::ocean_parser::*;
 
 static TEST_COUNTER: AtomicU64 = AtomicU64::new(0);
 

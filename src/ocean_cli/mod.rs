@@ -7,6 +7,7 @@ pub mod runtime;
 pub mod events;
 pub mod metrics;
 pub mod sandbox;
+pub mod init;
 
 pub use args::*;
 pub use config::*;
@@ -17,3 +18,4 @@ pub use runtime::*;
 pub use events::*;
 pub use metrics::*;
 pub use sandbox::*;
+pub use init::*;

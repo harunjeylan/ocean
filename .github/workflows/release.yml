@@ -1,0 +1,68 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - run: cargo test
+
+  release:
+    needs: [test]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            binary: ocean.exe
+            archive-suffix: zip
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            binary: ocean
+            archive-suffix: tar.gz
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            binary: ocean
+            archive-suffix: tar.gz
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+
+      - run: cargo build --release
+
+      - name: Archive binary
+        run: |
+          $archive = "ocean-${{ github.ref_name }}-${{ matrix.target }}.${{ matrix.archive-suffix }}"
+          if ("${{ matrix.os }}" -eq "windows-latest") {
+            Compress-Archive -Path target/release/${{ matrix.binary }} -DestinationPath $archive
+          } else {
+            tar -czf $archive -C target/release ${{ matrix.binary }}
+          }
+        shell: pwsh
+
+      - name: Upload Release Asset
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            ocean-${{ github.ref_name }}-${{ matrix.target }}.${{ matrix.archive-suffix }}
+
+  release-artifacts:
+    needs: [release]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Upload install scripts
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            install.ps1
+            install.sh
+          generate_release_notes: true

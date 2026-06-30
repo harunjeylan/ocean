@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use crate::ocean_index::report::IndexReport;
 
 #[derive(Debug, Clone)]
@@ -33,10 +35,35 @@ pub enum ProgressEvent {
         total_edges: u64,
     },
     IndexComplete(IndexReport),
+    BackpressurePaused {
+        queue_len: usize,
+        available_ai: usize,
+        in_flight: u32,
+    },
+    BackpressureResumed,
+    Retrying {
+        path: String,
+        attempt: u32,
+        max_retries: u32,
+        delay_ms: u64,
+        error: String,
+    },
 }
 
-pub trait ProgressReporter: Send {
+pub trait ProgressReporter: Send + Sync {
     fn report(&self, event: ProgressEvent);
+}
+
+impl ProgressReporter for Box<dyn ProgressReporter> {
+    fn report(&self, event: ProgressEvent) {
+        (**self).report(event);
+    }
+}
+
+impl ProgressReporter for Arc<dyn ProgressReporter> {
+    fn report(&self, event: ProgressEvent) {
+        (**self).report(event);
+    }
 }
 
 pub struct ConsoleReporter;
@@ -75,6 +102,15 @@ impl ProgressReporter for ConsoleReporter {
                     "Indexing complete: {} indexed, {} skipped, {} failed ({} files, {}ms)",
                     indexed, skipped, failed, total, duration
                 );
+            }
+            ProgressEvent::BackpressurePaused { queue_len, available_ai, in_flight } => {
+                println!("  ⚠ Backpressure: queue={}, ai_permits={}, in_flight={}", queue_len, available_ai, in_flight);
+            }
+            ProgressEvent::BackpressureResumed => {
+                println!("  ✓ Backpressure resolved, resuming");
+            }
+            ProgressEvent::Retrying { path, attempt, max_retries, delay_ms, error } => {
+                println!("  Retry {}/{} for '{}' in {}ms: {}", attempt + 1, max_retries + 1, path, delay_ms, error);
             }
         }
     }

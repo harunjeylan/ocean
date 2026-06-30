@@ -104,3 +104,46 @@ fn progress_event_index_complete() {
         _ => panic!("wrong variant"),
     }
 }
+
+#[test]
+fn progress_event_backpressure_paused() {
+    let event = ProgressEvent::BackpressurePaused { queue_len: 50, available_ai: 1, in_flight: 5 };
+    match event {
+        ProgressEvent::BackpressurePaused { queue_len, available_ai, in_flight } => {
+            assert_eq!(queue_len, 50);
+            assert_eq!(available_ai, 1);
+            assert_eq!(in_flight, 5);
+        }
+        _ => panic!("wrong variant"),
+    }
+}
+
+#[test]
+fn progress_event_backpressure_resumed() {
+    let event = ProgressEvent::BackpressureResumed;
+    match event {
+        ProgressEvent::BackpressureResumed => {}
+        _ => panic!("wrong variant"),
+    }
+}
+
+#[test]
+fn progress_event_retrying() {
+    let event = ProgressEvent::Retrying {
+        path: "test.txt".into(),
+        attempt: 1,
+        max_retries: 3,
+        delay_ms: 200,
+        error: "timeout".into(),
+    };
+    match event {
+        ProgressEvent::Retrying { path, attempt, max_retries, delay_ms, error } => {
+            assert_eq!(path, "test.txt");
+            assert_eq!(attempt, 1);
+            assert_eq!(max_retries, 3);
+            assert_eq!(delay_ms, 200);
+            assert_eq!(error, "timeout");
+        }
+        _ => panic!("wrong variant"),
+    }
+}

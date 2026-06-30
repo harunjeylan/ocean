@@ -1,12 +1,20 @@
 pub mod config;
 pub mod error;
+pub mod job_queue;
 pub mod orchestrator;
 pub mod processor;
 pub mod progress;
+pub mod rate_limiter;
 pub mod report;
+pub mod runtime;
+pub mod worker_pool;
 
-pub use config::{IndexConfig, IndexMode};
-pub use error::IndexError;
+pub use config::{BackpressureConfig, IndexConfig, IndexMode, RateLimiterConfig};
+pub use error::{IndexError, RuntimeError};
+pub use job_queue::{FileJob, JobPriority, JobQueue};
 pub use orchestrator::IndexOrchestrator;
 pub use progress::{ConsoleReporter, ProgressEvent, ProgressReporter, SilentReporter};
+pub use rate_limiter::RateLimiter;
 pub use report::{FileIndexStatus, FileResult, IndexReport};
+pub use runtime::RetryPolicy;
+pub use worker_pool::WorkerPool;

@@ -1,17 +1,20 @@
 use std::sync::Arc;
 use std::time::Instant;
 
+use rayon::prelude::*;
 use sha2::{Digest, Sha256};
 
 use crate::ocean_fs::scan_dir;
 use crate::ocean_storage::{ChunkStore, GraphStore, IndexStatus, StateStore, VectorStore};
 use crate::ocean_vector::embedder::Embedder;
 
-use super::config::{IndexConfig, IndexMode};
+use super::config::{BackpressureConfig, IndexConfig, IndexMode};
 use super::error::IndexError;
+use super::job_queue::{FileJob, JobPriority, JobQueue};
 use super::processor::FileProcessor;
 use super::progress::{ProgressEvent, ProgressReporter};
 use super::report::{FileIndexStatus, FileResult, IndexReport};
+use super::worker_pool::WorkerPool;
 
 fn stable_state_id(path: &str) -> String {
     let mut hasher = Sha256::new();
@@ -23,7 +26,8 @@ fn stable_state_id(path: &str) -> String {
 pub struct IndexOrchestrator {
     processor: FileProcessor,
     state_store: Arc<dyn StateStore>,
-    reporter: Box<dyn ProgressReporter>,
+    reporter: Arc<dyn ProgressReporter>,
+    pool: WorkerPool,
 }
 
 impl IndexOrchestrator {
@@ -33,7 +37,7 @@ impl IndexOrchestrator {
         graph_store: Option<Arc<dyn GraphStore>>,
         state_store: Arc<dyn StateStore>,
         embedder: Arc<dyn Embedder>,
-        reporter: Box<dyn ProgressReporter>,
+        reporter: Arc<dyn ProgressReporter>,
     ) -> Self {
         let processor = FileProcessor::new(
             embedder,
@@ -41,10 +45,12 @@ impl IndexOrchestrator {
             chunk_store,
             graph_store,
         );
+        let pool = WorkerPool::default();
         Self {
             processor,
             state_store,
             reporter,
+            pool,
         }
     }
 
@@ -52,7 +58,7 @@ impl IndexOrchestrator {
         let start = Instant::now();
         let dir = config.dir.clone();
 
-        let metas = scan_dir(&dir).map_err(|e| IndexError::ScanError(format!("{}", e)))?;
+        let metas = self.pool.run_io(|| scan_dir(&dir))?.map_err(|e| IndexError::ScanError(format!("{}", e)))?;
         let total_files = metas.len() as u64;
 
         self.reporter.report(ProgressEvent::ScanStarted {
@@ -67,100 +73,82 @@ impl IndexOrchestrator {
             return Ok(report);
         }
 
+        let priority = match config.mode {
+            IndexMode::Watch => JobPriority::High,
+            IndexMode::Incremental => JobPriority::Normal,
+            IndexMode::Full => JobPriority::Low,
+        };
+
+        let mut job_queue = JobQueue::new(config.backpressure.max_queue_size);
+        for meta in &metas {
+            job_queue.enqueue(FileJob {
+                file_id: meta.id.clone(),
+                path: meta.path.clone(),
+                priority,
+                retry_count: 0,
+            }).map_err(|e| IndexError::Runtime(e))?;
+        }
+
+        let bp = &config.backpressure;
         let mut report = IndexReport::new();
+        let mut was_paused = false;
 
-        for (i, meta) in metas.iter().enumerate() {
-            let current = (i + 1) as u64;
-            let path_str = &meta.path;
-
-            if config.mode == IndexMode::Incremental {
-                let state_id = stable_state_id(&meta.path);
-                match self.state_store.get_state(&state_id) {
-                    Ok(Some(state)) if state.hash == meta.hash => {
-                        let fr = FileResult {
-                            path: path_str.clone(),
-                            status: FileIndexStatus::Skipped,
-                            chunks: 0,
-                            embedded: 0,
-                            embed_skipped: 0,
-                            embed_failed: 0,
-                            nodes: 0,
-                            edges: 0,
-                            duration_ms: 0,
-                            error: None,
-                        };
-                        self.reporter.report(ProgressEvent::FileSkipped {
-                            path: path_str.clone(),
-                        });
-                        report.merge(fr);
-                        continue;
-                    }
-                    Err(e) => {
-                        let fr = FileResult {
-                            path: path_str.clone(),
-                            status: FileIndexStatus::Failed,
-                            chunks: 0,
-                            embedded: 0,
-                            embed_skipped: 0,
-                            embed_failed: 0,
-                            nodes: 0,
-                            edges: 0,
-                            duration_ms: 0,
-                            error: Some(format!("state check: {}", e)),
-                        };
-                        self.reporter.report(ProgressEvent::FileFailed {
-                            path: path_str.clone(),
-                            error: e.to_string(),
-                        });
-                        let _ = self.state_store.update_state(&state_id, &meta.hash, IndexStatus::Failed);
-                        report.merge(fr);
-                        continue;
-                    }
-                    _ => {}
-                }
+        loop {
+            if job_queue.is_empty() {
+                break;
             }
 
-            self.reporter.report(ProgressEvent::FileProcessing {
-                path: path_str.clone(),
-                current,
-                total: total_files,
+            let batch = self.dequeue_with_backpressure(
+                &mut job_queue,
+                bp,
+                &mut was_paused,
+            );
+
+            if batch.is_empty() {
+                continue;
+            }
+
+            let results: Vec<FileResult> = self.pool.cpu_pool.install(|| {
+                batch
+                    .par_iter()
+                    .map(|job| {
+                        self.process_file(job, &config)
+                    })
+                    .collect()
             });
 
-            match self.processor.process(path_str, &meta.id, &config) {
-                Ok(fr) => {
-                    let _ = self.state_store.update_state(&stable_state_id(&meta.path), &meta.hash, IndexStatus::Indexed);
-                    self.reporter.report(ProgressEvent::FileComplete {
-                        path: path_str.clone(),
-                        chunks: fr.chunks,
-                        embedded: fr.embedded,
-                        embed_skipped: fr.embed_skipped,
-                        embed_failed: fr.embed_failed,
-                        edges: fr.edges,
-                        nodes: fr.nodes,
-                        duration_ms: fr.duration_ms,
-                    });
-                    report.merge(fr);
+            for fr in results {
+                match fr.status {
+                    FileIndexStatus::Indexed => {
+                        let state_id = stable_state_id(&fr.path);
+                        let _ = self.state_store.update_state(&state_id, "", IndexStatus::Indexed);
+                        self.reporter.report(ProgressEvent::FileComplete {
+                            path: fr.path.clone(),
+                            chunks: fr.chunks,
+                            embedded: fr.embedded,
+                            embed_skipped: fr.embed_skipped,
+                            embed_failed: fr.embed_failed,
+                            edges: fr.edges,
+                            nodes: fr.nodes,
+                            duration_ms: fr.duration_ms,
+                        });
+                    }
+                    FileIndexStatus::Skipped => {
+                        self.reporter.report(ProgressEvent::FileSkipped {
+                            path: fr.path.clone(),
+                        });
+                    }
+                    FileIndexStatus::Failed => {
+                        let state_id = stable_state_id(&fr.path);
+                        let _ = self.state_store.update_state(&state_id, "", IndexStatus::Failed);
+                        let err = fr.error.clone().unwrap_or_default();
+                        self.reporter.report(ProgressEvent::FileFailed {
+                            path: fr.path.clone(),
+                            error: err,
+                        });
+                    }
                 }
-                Err(e) => {
-                    let _ = self.state_store.update_state(&stable_state_id(&meta.path), &meta.hash, IndexStatus::Failed);
-                    self.reporter.report(ProgressEvent::FileFailed {
-                        path: path_str.clone(),
-                        error: e.to_string(),
-                    });
-                    let fr = FileResult {
-                        path: path_str.clone(),
-                        status: FileIndexStatus::Failed,
-                        chunks: 0,
-                        embedded: 0,
-                        embed_skipped: 0,
-                        embed_failed: 0,
-                        nodes: 0,
-                        edges: 0,
-                        duration_ms: 0,
-                        error: Some(e.to_string()),
-                    };
-                    report.merge(fr);
-                }
+                report.merge(fr);
             }
         }
 
@@ -175,5 +163,108 @@ impl IndexOrchestrator {
         self.reporter.report(ProgressEvent::IndexComplete(report.clone()));
 
         Ok(report)
+    }
+
+    fn dequeue_with_backpressure(
+        &self,
+        queue: &mut JobQueue,
+        bp: &BackpressureConfig,
+        was_paused: &mut bool,
+    ) -> Vec<FileJob> {
+        loop {
+            let ai_permits = self.pool.ai_semaphore.available_permits();
+            let queue_len = queue.len();
+            let under_backlog = !queue.has_backlog();
+            let ai_available = ai_permits > 0 || bp.max_ai_concurrent == 0;
+            let under_pressure = under_backlog && ai_available;
+
+            if under_pressure {
+                if *was_paused {
+                    *was_paused = false;
+                    self.reporter.report(ProgressEvent::BackpressureResumed);
+                }
+                let batch_size = bp.max_in_flight.min(queue_len);
+                return queue.dequeue_batch(batch_size);
+            }
+
+            if !*was_paused {
+                *was_paused = true;
+                self.reporter.report(ProgressEvent::BackpressurePaused {
+                    queue_len,
+                    available_ai: ai_permits,
+                    in_flight: 0,
+                });
+            }
+
+            std::thread::sleep(std::time::Duration::from_millis(bp.pause_check_ms));
+        }
+    }
+
+    fn process_file(&self, job: &FileJob, config: &IndexConfig) -> FileResult {
+        let state_id = stable_state_id(&job.path);
+
+        if config.mode == IndexMode::Incremental {
+            match self.state_store.get_state(&state_id) {
+                Ok(Some(state)) if state.hash.is_empty() || state.status == IndexStatus::Indexed => {
+                    return FileResult {
+                        path: job.path.clone(),
+                        status: FileIndexStatus::Skipped,
+                        chunks: 0,
+                        embedded: 0,
+                        embed_skipped: 0,
+                        embed_failed: 0,
+                        nodes: 0,
+                        edges: 0,
+                        duration_ms: 0,
+                        error: None,
+                    };
+                }
+                Ok(_) => {}
+                Err(e) => {
+                    return FileResult {
+                        path: job.path.clone(),
+                        status: FileIndexStatus::Failed,
+                        chunks: 0,
+                        embedded: 0,
+                        embed_skipped: 0,
+                        embed_failed: 0,
+                        nodes: 0,
+                        edges: 0,
+                        duration_ms: 0,
+                        error: Some(format!("state check: {}", e)),
+                    };
+                }
+            }
+        }
+
+        self.reporter.report(ProgressEvent::FileProcessing {
+            path: job.path.clone(),
+            current: 0,
+            total: 0,
+        });
+
+        match self.processor.process_with_retry(
+            &job.path,
+            &job.file_id,
+            config,
+            Some(&self.pool),
+            Some(self.reporter.as_ref()),
+        ) {
+            Ok(fr) => fr,
+            Err(e) => {
+                FileResult {
+                    path: job.path.clone(),
+                    status: FileIndexStatus::Failed,
+                    chunks: 0,
+                    embedded: 0,
+                    embed_skipped: 0,
+                    embed_failed: 0,
+                    nodes: 0,
+                    edges: 0,
+                    duration_ms: 0,
+                    error: Some(e.to_string()),
+                }
+            }
+        }
     }
 }

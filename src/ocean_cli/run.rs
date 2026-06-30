@@ -283,6 +283,15 @@ fn cmd_index(args: IndexArgs, config: &Option<OceanConfig>) -> Result<(), String
         config.as_ref().and_then(|c| c.embedding.base_url.as_deref()),
     );
 
+    let runtime = config.as_ref().map(|c| &c.runtime);
+    let io_threads = args.io_threads.or_else(|| runtime.and_then(|r| r.io_threads));
+    let cpu_threads = args.cpu_threads.or_else(|| runtime.and_then(|r| r.cpu_threads));
+    let max_ai_concurrent = args.max_ai_concurrent.or_else(|| runtime.and_then(|r| r.max_ai_concurrent));
+    let max_retries = args.max_retries.or_else(|| runtime.and_then(|r| r.max_retries));
+    let retry_backoff_ms = args.retry_backoff_ms.or_else(|| runtime.and_then(|r| r.retry_backoff_ms));
+    let max_queue_size = args.max_queue_size.or_else(|| runtime.and_then(|r| r.max_queue_size));
+    let max_in_flight = args.max_in_flight.or_else(|| runtime.and_then(|r| r.max_in_flight));
+
     let request = IndexRequest {
         dir: args.dir,
         provider: Some(provider),
@@ -298,6 +307,13 @@ fn cmd_index(args: IndexArgs, config: &Option<OceanConfig>) -> Result<(), String
         no_entities: args.no_entities,
         watch: args.watch,
         chunk_config: None,
+        io_threads,
+        cpu_threads,
+        max_ai_concurrent,
+        max_retries,
+        retry_backoff_ms,
+        max_queue_size,
+        max_in_flight,
     };
 
     let report = api_index::index_directory(request).map_err(|e| e.to_string())?;

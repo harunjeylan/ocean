@@ -3,9 +3,10 @@ use std::sync::Arc;
 use super::embedder_spec::MockEmbedder;
 use crate::ocean_chunk::ChunkConfig;
 use crate::ocean_graph::GraphConfig;
-use crate::ocean_index::config::{IndexConfig, IndexMode};
+use crate::ocean_index::config::{BackpressureConfig, IndexConfig, IndexMode, RateLimiterConfig};
 use crate::ocean_index::orchestrator::IndexOrchestrator;
 use crate::ocean_index::progress::SilentReporter;
+use crate::ocean_index::runtime::RetryPolicy;
 use crate::ocean_storage::{
     ChunkStore, GraphStore, StateStore, StorageConfig,
     SurrealChunkStore, SurrealGraphStore, SurrealStateStore, SurrealVectorStore, VectorStore,
@@ -40,7 +41,7 @@ fn make_orchestrator(
         gstore.map(|g| g as Arc<dyn GraphStore>),
         sstore as Arc<dyn StateStore>,
         embedder,
-        Box::new(SilentReporter),
+        Arc::new(SilentReporter),
     )
 }
 
@@ -59,7 +60,11 @@ fn orchestrator_run_full_mode() {
         },
         graph_config: GraphConfig::default(),
         batch_size: 10,
-        max_retries: 3,
+        retry_policy: RetryPolicy::default(),
+        rate_limiter: RateLimiterConfig::default(),
+        backpressure: BackpressureConfig::default(),
+        io_threads: None,
+        cpu_threads: None,
         no_graph: false,
     };
 
@@ -87,7 +92,11 @@ fn orchestrator_incremental_skips_unchanged_files() {
         },
         graph_config: GraphConfig::default(),
         batch_size: 10,
-        max_retries: 3,
+        retry_policy: RetryPolicy::default(),
+        rate_limiter: RateLimiterConfig::default(),
+        backpressure: BackpressureConfig::default(),
+        io_threads: None,
+        cpu_threads: None,
         no_graph: false,
     };
 
@@ -118,7 +127,11 @@ fn orchestrator_full_reindexes_all_files() {
         },
         graph_config: GraphConfig::default(),
         batch_size: 10,
-        max_retries: 3,
+        retry_policy: RetryPolicy::default(),
+        rate_limiter: RateLimiterConfig::default(),
+        backpressure: BackpressureConfig::default(),
+        io_threads: None,
+        cpu_threads: None,
         no_graph: false,
     };
 
@@ -144,7 +157,11 @@ fn orchestrator_report_aggregation_valid() {
         },
         graph_config: GraphConfig::default(),
         batch_size: 10,
-        max_retries: 3,
+        retry_policy: RetryPolicy::default(),
+        rate_limiter: RateLimiterConfig::default(),
+        backpressure: BackpressureConfig::default(),
+        io_threads: None,
+        cpu_threads: None,
         no_graph: false,
     };
 

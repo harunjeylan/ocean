@@ -60,5 +60,13 @@ mod index_config_spec;
 mod index_report_spec;
 #[path = "ocean_index/progress_test.rs"]
 mod index_progress_spec;
+#[path = "ocean_index/runtime_test.rs"]
+mod index_runtime_spec;
+#[path = "ocean_index/job_queue_test.rs"]
+mod index_job_queue_spec;
+#[path = "ocean_index/worker_pool_test.rs"]
+mod index_worker_pool_spec;
+#[path = "ocean_index/rate_limiter_test.rs"]
+mod index_rate_limiter_spec;
 #[path = "ocean_index/orchestrator_test.rs"]
 mod index_orchestrator_spec;

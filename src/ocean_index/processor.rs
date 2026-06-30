@@ -10,7 +10,10 @@ use crate::ocean_vector::pipeline::{IndexConfig as PipelineIndexConfig, IndexPip
 
 use super::config::IndexConfig;
 use super::error::IndexError;
+use super::progress::ProgressEvent;
+use super::progress::ProgressReporter;
 use super::report::FileResult;
+use super::worker_pool::WorkerPool;
 
 pub(crate) struct FileProcessor {
     embedder: Arc<dyn Embedder>,
@@ -33,11 +36,65 @@ impl FileProcessor {
         }
     }
 
+    #[allow(dead_code)]
     pub fn process(
         &self,
         path: &str,
         file_id: &str,
         config: &IndexConfig,
+    ) -> Result<FileResult, IndexError> {
+        self.process_with_retry(path, file_id, config, None, None)
+    }
+
+    pub fn process_with_retry(
+        &self,
+        path: &str,
+        file_id: &str,
+        config: &IndexConfig,
+        pool: Option<&WorkerPool>,
+        reporter: Option<&dyn ProgressReporter>,
+    ) -> Result<FileResult, IndexError> {
+        let retry_policy = &config.retry_policy;
+        let mut last_error = None;
+
+        for attempt in 0..=retry_policy.max_retries {
+            match self.try_process(path, file_id, config, pool) {
+                Ok(result) => return Ok(result),
+                Err(e) => {
+                    let is_transient = retry_policy.is_transient(&e);
+                    if is_transient && attempt < retry_policy.max_retries {
+                        let delay = retry_policy.next_delay(attempt);
+                        if let Some(r) = reporter {
+                            r.report(ProgressEvent::Retrying {
+                                path: path.to_string(),
+                                attempt,
+                                max_retries: retry_policy.max_retries,
+                                delay_ms: delay.as_millis() as u64,
+                                error: e.to_string(),
+                            });
+                        }
+                        last_error = Some(e);
+                        std::thread::sleep(delay);
+                    } else {
+                        return Err(e);
+                    }
+                }
+            }
+        }
+
+        Err(IndexError::Runtime(super::error::RuntimeError::RetryExhausted {
+            path: path.to_string(),
+            retries: retry_policy.max_retries,
+            last_error: last_error.map(|e| e.to_string()).unwrap_or_default(),
+        }))
+    }
+
+    fn try_process(
+        &self,
+        path: &str,
+        file_id: &str,
+        config: &IndexConfig,
+        pool: Option<&WorkerPool>,
     ) -> Result<FileResult, IndexError> {
         let start = Instant::now();
 
@@ -75,11 +132,19 @@ impl FileProcessor {
             ..Default::default()
         };
 
-        let pipeline_report = self.pipeline.index_chunks(
-            chunks.clone(),
-            &*self.embedder,
-            &pipeline_config,
-        ).map_err(|e| {
+        let embed_fn = || {
+            self.pipeline.index_chunks(
+                chunks.clone(),
+                &*self.embedder,
+                &pipeline_config,
+            )
+        };
+
+        let pipeline_report = if let Some(p) = pool {
+            p.run_ai(embed_fn)?
+        } else {
+            embed_fn()
+        }.map_err(|e| {
             IndexError::FileProcessError {
                 file_id: file_id.to_string(),
                 stage: "embed".into(),

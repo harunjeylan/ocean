@@ -98,6 +98,13 @@ pub struct IndexRequest {
     pub no_entities: bool,
     pub watch: bool,
     pub chunk_config: Option<ChunkConfig>,
+    pub io_threads: Option<usize>,
+    pub cpu_threads: Option<usize>,
+    pub max_ai_concurrent: Option<usize>,
+    pub max_retries: Option<u32>,
+    pub retry_backoff_ms: Option<u64>,
+    pub max_queue_size: Option<usize>,
+    pub max_in_flight: Option<usize>,
 }
 
 #[derive(Debug, Clone)]

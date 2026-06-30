@@ -97,6 +97,32 @@ impl Default for QueryConfigOpt {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[serde(default)]
+pub struct RuntimeConfigOpt {
+    pub io_threads: Option<usize>,
+    pub cpu_threads: Option<usize>,
+    pub max_ai_concurrent: Option<usize>,
+    pub max_retries: Option<u32>,
+    pub retry_backoff_ms: Option<u64>,
+    pub max_queue_size: Option<usize>,
+    pub max_in_flight: Option<usize>,
+}
+
+impl Default for RuntimeConfigOpt {
+    fn default() -> Self {
+        Self {
+            io_threads: None,
+            cpu_threads: None,
+            max_ai_concurrent: None,
+            max_retries: None,
+            retry_backoff_ms: None,
+            max_queue_size: None,
+            max_in_flight: None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
 pub struct OceanConfig {
     #[serde(default)]
     pub embedding: EmbeddingConfig,
@@ -104,6 +130,8 @@ pub struct OceanConfig {
     pub index: IndexConfigOpt,
     #[serde(default)]
     pub query: QueryConfigOpt,
+    #[serde(default)]
+    pub runtime: RuntimeConfigOpt,
 }
 
 impl Default for OceanConfig {
@@ -112,6 +140,7 @@ impl Default for OceanConfig {
             embedding: EmbeddingConfig::default(),
             index: IndexConfigOpt::default(),
             query: QueryConfigOpt::default(),
+            runtime: RuntimeConfigOpt::default(),
         }
     }
 }
@@ -182,6 +211,13 @@ fn merge_config(base: &mut OceanConfig, partial: OceanConfig) {
     merge_opt!(base.query.context, partial.query.context);
     merge_opt!(base.query.context_chunks, partial.query.context_chunks);
     merge_opt!(base.query.verbose, partial.query.verbose);
+    merge_opt!(base.runtime.io_threads, partial.runtime.io_threads);
+    merge_opt!(base.runtime.cpu_threads, partial.runtime.cpu_threads);
+    merge_opt!(base.runtime.max_ai_concurrent, partial.runtime.max_ai_concurrent);
+    merge_opt!(base.runtime.max_retries, partial.runtime.max_retries);
+    merge_opt!(base.runtime.retry_backoff_ms, partial.runtime.retry_backoff_ms);
+    merge_opt!(base.runtime.max_queue_size, partial.runtime.max_queue_size);
+    merge_opt!(base.runtime.max_in_flight, partial.runtime.max_in_flight);
 }
 
 pub fn resolve_api_key(cli_key: Option<&str>, config_key: Option<&str>, env_var: Option<&str>) -> Option<String> {

@@ -3,8 +3,9 @@ use std::sync::Arc;
 
 use crate::ocean_chunk::ChunkConfig;
 use crate::ocean_graph::GraphConfig;
-use crate::ocean_index::config::IndexConfig as OceanIndexConfig;
+use crate::ocean_index::config::{BackpressureConfig, IndexConfig as OceanIndexConfig, RateLimiterConfig};
 use crate::ocean_index::progress::ConsoleReporter;
+use crate::ocean_index::runtime::RetryPolicy;
 use crate::ocean_index::{IndexMode, IndexOrchestrator};
 use crate::ocean_storage::config::StorageConfig;
 use crate::ocean_storage::graph_store::GraphStore;
@@ -72,6 +73,28 @@ pub fn index_directory(request: IndexRequest) -> Result<IndexResult, ApiError> {
 
     let chunk_config = request.chunk_config.unwrap_or_default();
 
+    let cpus = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(4);
+    let io_threads = request.io_threads.or(Some(cpus * 2));
+    let cpu_threads = request.cpu_threads.or(Some(cpus));
+
+    let retry_policy = RetryPolicy::new(
+        request.max_retries.unwrap_or(3),
+        request.retry_backoff_ms.unwrap_or(100),
+        30_000,
+    );
+
+    let rate_limiter = RateLimiterConfig {
+        max_concurrent: request.max_ai_concurrent.unwrap_or(2),
+        requests_per_minute: None,
+    };
+
+    let backpressure = BackpressureConfig {
+        max_queue_size: request.max_queue_size.unwrap_or(10_000),
+        max_in_flight: request.max_in_flight.unwrap_or(10),
+        max_ai_concurrent: request.max_ai_concurrent.unwrap_or(2),
+        pause_check_ms: 1_000,
+    };
+
     let index_config = OceanIndexConfig {
         mode: index_mode,
         dir: request.dir,
@@ -89,7 +112,11 @@ pub fn index_directory(request: IndexRequest) -> Result<IndexResult, ApiError> {
             ..Default::default()
         },
         batch_size: request.batch_size,
-        max_retries: 3,
+        retry_policy,
+        rate_limiter,
+        backpressure,
+        io_threads,
+        cpu_threads,
         no_graph: request.no_graph,
     };
 
@@ -99,7 +126,7 @@ pub fn index_directory(request: IndexRequest) -> Result<IndexResult, ApiError> {
         graph_store.map(|gs| Arc::new(gs) as Arc<dyn GraphStore>),
         Arc::new(state_store),
         embedder,
-        Box::new(ConsoleReporter),
+        Arc::new(ConsoleReporter),
     );
 
     orchestrator.run(index_config).map_err(|e| ApiError::IndexError(e.to_string()))

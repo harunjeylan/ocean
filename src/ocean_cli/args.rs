@@ -132,6 +132,20 @@ pub struct IndexArgs {
     pub no_entities: bool,
     #[arg(long)]
     pub watch: bool,
+    #[arg(long)]
+    pub io_threads: Option<usize>,
+    #[arg(long)]
+    pub cpu_threads: Option<usize>,
+    #[arg(long)]
+    pub max_ai_concurrent: Option<usize>,
+    #[arg(long)]
+    pub max_retries: Option<u32>,
+    #[arg(long)]
+    pub retry_backoff_ms: Option<u64>,
+    #[arg(long)]
+    pub max_queue_size: Option<usize>,
+    #[arg(long)]
+    pub max_in_flight: Option<usize>,
 }
 
 #[derive(Args)]

@@ -59,6 +59,76 @@ pub fn print_graph_stats(node_count: u64, edge_count: u64, type_counts: Vec<(Str
     }
 }
 
+pub fn print_graph_status(
+    db_path: &str,
+    accessible: bool,
+    schema_initialized: bool,
+    node_count: u64,
+    edge_count: u64,
+    type_breakdown: Vec<(String, u64)>,
+) {
+    println!("Graph Status");
+    println!("  Database: {}", db_path);
+    println!("  Accessible: {}", if accessible { "Yes" } else { "No" });
+    if accessible {
+        println!("  Schema: {}", if schema_initialized { "Initialized" } else { "Not initialized" });
+        println!("  Nodes: {}", node_count);
+        println!("  Edges: {}", edge_count);
+        if !type_breakdown.is_empty() {
+            println!("  By type:");
+            for (type_name, count) in &type_breakdown {
+                println!("    {}: {}", type_name, count);
+            }
+        }
+        if node_count == 0 && edge_count == 0 {
+            println!("  └─ Run `ocean index .` to build the graph");
+        }
+    } else {
+        println!("  └─ Database not found or inaccessible. Run `ocean index .` first");
+    }
+}
+
+pub fn print_vector_status(
+    db_path: &str,
+    accessible: bool,
+    schema_initialized: bool,
+    chunk_count: u64,
+    provider: &str,
+    model: &str,
+    dimension: usize,
+    api_key_set: bool,
+    api_key_required: bool,
+    connection_result: Option<String>,
+    connection_ms: Option<u64>,
+) {
+    println!("Vector Status");
+    println!("  Database: {}", db_path);
+    println!("  Accessible: {}", if accessible { "Yes" } else { "No" });
+    if accessible {
+        println!("  Schema: {}", if schema_initialized { "Initialized" } else { "Not initialized" });
+        println!("  Indexed chunks: {}", chunk_count);
+        println!(
+            "  Embedder: {} / {} (dim={})",
+            provider, model, dimension
+        );
+        if api_key_required && !api_key_set {
+            println!("  API key: Not set (required for {})", provider);
+        }
+        if let Some(result) = connection_result {
+            if let Some(ms) = connection_ms {
+                println!("  Connection: {} ({}ms)", result, ms);
+            } else {
+                println!("  Connection: {}", result);
+            }
+        }
+        if !schema_initialized || chunk_count == 0 {
+            println!("  └─ Run `ocean index .` to index documents");
+        }
+    } else {
+        println!("  └─ Database not found or inaccessible. Run `ocean index .` first");
+    }
+}
+
 pub fn print_graph_expanded(subgraph: &Subgraph) {
     println!("Expanded from '{}' (depth: {}):", subgraph.seed_id, subgraph.depth);
     println!();

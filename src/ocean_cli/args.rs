@@ -37,6 +37,7 @@ pub enum Commands {
     Query(QueryArgs),
     VectorSearch(VectorSearchArgs),
     Graph(GraphArgs),
+    Vector(VectorArgs),
     Config(ConfigArgs),
     Init(InitArgs),
 }
@@ -80,6 +81,32 @@ pub enum GraphCommands {
     Stats {
         #[arg(long)]
         db_path: Option<String>,
+    },
+    Status {
+        #[arg(long)]
+        db_path: Option<String>,
+    },
+}
+
+#[derive(Args)]
+pub struct VectorArgs {
+    #[command(subcommand)]
+    pub command: VectorCommands,
+}
+
+#[derive(Subcommand)]
+pub enum VectorCommands {
+    Status {
+        #[arg(long)]
+        db_path: Option<String>,
+        #[arg(long)]
+        provider: Option<String>,
+        #[arg(long)]
+        model: Option<String>,
+        #[arg(long)]
+        api_key: Option<String>,
+        #[arg(long)]
+        ollama_url: Option<String>,
     },
 }
 

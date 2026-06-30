@@ -1,4 +1,5 @@
 use surrealdb::engine::local::{Db, Mem, SurrealKv};
+use surrealdb::types::SurrealValue;
 use surrealdb::Surreal;
 use tokio::runtime::Runtime;
 
@@ -59,12 +60,11 @@ impl SurrealVectorStore {
 
 impl VectorStore for SurrealVectorStore {
     fn insert(&self, record: &ChunkRecord) -> Result<(), StorageError> {
-        let data = serde_json::json!(record);
         let cid = record.chunk_id.clone();
         self.rt.block_on(async {
             self.db
                 .query(format!("UPSERT chunk:`{}` CONTENT $data", cid))
-                .bind(("data", data))
+                .bind(("data", record.clone()))
                 .await
                 .map_err(|e| StorageError::QueryFailed("VectorStore::insert".into(), e.to_string()))?;
             Ok::<_, StorageError>(())
@@ -182,7 +182,7 @@ impl VectorStore for SurrealVectorStore {
                 .query("SELECT count() AS total FROM chunk GROUP BY count")
                 .await
                 .map_err(|e| StorageError::QueryFailed("VectorStore::count".into(), e.to_string()))?;
-            #[derive(serde::Deserialize)]
+            #[derive(serde::Deserialize, SurrealValue)]
             struct CountResult { total: u64 }
             let rows: Vec<CountResult> = result.take(0)
                 .map_err(|e| StorageError::QueryFailed("VectorStore::count".into(), e.to_string()))?;
@@ -249,7 +249,7 @@ impl ChunkStore for SurrealVectorStore {
                 .bind(("model", model.to_string()))
                 .await
                 .map_err(|e| StorageError::QueryFailed("VectorStore::chunk_exists".into(), e.to_string()))?;
-            #[derive(serde::Deserialize)]
+            #[derive(serde::Deserialize, SurrealValue)]
             struct ExistsResult { cnt: u64 }
             let rows: Vec<ExistsResult> = results.take(0)
                 .map_err(|e| StorageError::QueryFailed("VectorStore::chunk_exists".into(), e.to_string()))?;

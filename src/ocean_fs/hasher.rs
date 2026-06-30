@@ -51,7 +51,7 @@ pub fn hash_file(path: &str) -> Result<String, HashError> {
     }
 
     let result = hasher.finalize();
-    Ok(format!("{:x}", result))
+    Ok(result.iter().map(|b| format!("{:02x}", b)).collect())
 }
 
 pub fn verify_hash(path: &str, expected: &str) -> bool {

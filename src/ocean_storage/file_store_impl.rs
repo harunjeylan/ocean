@@ -69,20 +69,11 @@ impl SurrealFileStore {
 
 impl FileStore for SurrealFileStore {
     fn upsert_file(&self, file: &FileMeta) -> Result<(), StorageError> {
-        let fid = file.id.clone();
-        let data = serde_json::json!({
-            "file_id": file.id,
-            "path": file.path,
-            "hash": file.hash,
-            "size": file.size as i64,
-            "modified": file.modified,
-            "extension": file.extension,
-            "last_indexed": file.last_indexed,
-        });
+        let fid = file.file_id.clone();
         self.rt.block_on(async {
             self.db
                 .query(format!("UPSERT file:`{}` CONTENT $data", fid))
-                .bind(("data", data))
+                .bind(("data", file.clone()))
                 .await
                 .map_err(|e| StorageError::QueryFailed("FileStore::upsert_file".into(), e.to_string()))?;
             Ok::<_, StorageError>(())

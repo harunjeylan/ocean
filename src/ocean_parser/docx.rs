@@ -110,7 +110,7 @@ impl DocxDocument {
         tables: &mut Vec<Vec<Vec<String>>>,
     ) {
         let mut reader = Reader::from_str(xml);
-        reader.trim_text(true);
+        reader.config_mut().trim_text(true);
 
         let mut buf = Vec::new();
         let mut in_paragraph = false;
@@ -206,7 +206,7 @@ impl DocxDocument {
                     }
                 }
                 Ok(Event::Text(ref e)) => {
-                    let text = e.unescape().unwrap_or_default().to_string();
+                    let text = quick_xml::escape::unescape(&e.decode().unwrap_or_default()).unwrap_or_default().to_string();
                     if in_table_cell {
                         current_cell.push_str(&text);
                     } else if in_run && in_paragraph {

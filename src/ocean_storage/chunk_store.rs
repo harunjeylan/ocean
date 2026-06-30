@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use surrealdb::types::SurrealValue;
 
 use crate::ocean_storage::error::StorageError;
 
@@ -14,7 +15,7 @@ pub struct ChunkData {
     pub sheet: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, SurrealValue)]
 pub struct ChunkRecord {
     pub chunk_id: String,
     pub file_id: String,
@@ -38,7 +39,7 @@ impl ChunkRecord {
             use sha2::{Digest, Sha256};
             let mut hasher = Sha256::new();
             hasher.update(data.content.as_bytes());
-            format!("{:x}", hasher.finalize())
+            hasher.finalize().iter().map(|b| format!("{:02x}", b)).collect::<String>()
         };
         Self {
             chunk_id: data.id.clone(),

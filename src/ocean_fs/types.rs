@@ -1,4 +1,5 @@
 use std::time::{SystemTime, UNIX_EPOCH};
+use surrealdb::types::SurrealValue;
 use uuid::Uuid;
 
 pub type FileId = String;
@@ -72,7 +73,7 @@ pub struct NormalizedFile {
     pub category: FileCategory,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, SurrealValue)]
 pub struct PathMove {
     pub file_id: FileId,
     pub old_path: String,

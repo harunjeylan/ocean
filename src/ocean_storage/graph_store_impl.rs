@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use surrealdb::engine::local::{Db, Mem, SurrealKv};
 use surrealdb::Surreal;
+use surrealdb::types::SurrealValue;
 use tokio::runtime::Runtime;
 
 use crate::ocean_storage::config::StorageConfig;
@@ -9,7 +10,7 @@ use crate::ocean_storage::graph_store::{
     Edge, EdgeDirection, GraphStore, Node, NodeType, RelationType,
 };
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, SurrealValue)]
 struct GraphNodeRecord {
     node_id: String,
     node_type: String,
@@ -19,7 +20,7 @@ struct GraphNodeRecord {
     created_at: i64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, SurrealValue)]
 struct GraphEdgeRecord {
     edge_id: String,
     from_id: String,
@@ -155,7 +156,7 @@ impl GraphStore for SurrealGraphStore {
         self.rt.block_on(async {
             let _: Option<GraphNodeRecord> = self
                 .db
-                .create(("graph_node", &record.node_id))
+                .create(("graph_node", record.node_id.as_str()))
                 .content(record)
                 .await
                 .map_err(|e| StorageError::QueryFailed("GraphStore::insert_node".into(), e.to_string()))?;
@@ -169,7 +170,7 @@ impl GraphStore for SurrealGraphStore {
         self.rt.block_on(async {
             let _: Option<GraphEdgeRecord> = self
                 .db
-                .create(("graph_edge", &edge_id))
+                .create(("graph_edge", edge_id.as_str()))
                 .content(record)
                 .await
                 .map_err(|e| StorageError::QueryFailed("GraphStore::insert_edge".into(), e.to_string()))?;
@@ -401,10 +402,10 @@ impl GraphStore for SurrealGraphStore {
                 .query("SELECT count() AS total FROM graph_node GROUP BY count")
                 .await
                 .map_err(|e| StorageError::QueryFailed("GraphStore::count_nodes".into(), e.to_string()))?;
-            #[derive(serde::Deserialize)]
+            #[derive(serde::Deserialize, surrealdb::types::SurrealValue)]
             struct CountResult { total: u64 }
             let rows: Vec<CountResult> = results.take(0)
-                .map_err(|e| StorageError::QueryFailed("GraphStore::count_nodes".into(), e.to_string()))?;
+                .map_err(|e| StorageError::QueryFailed("GraphStore".into(), e.to_string()))?;
             Ok(rows.first().map(|r| r.total).unwrap_or(0))
         })
     }
@@ -415,8 +416,8 @@ impl GraphStore for SurrealGraphStore {
                 .db
                 .query("SELECT count() AS total FROM graph_edge GROUP BY count")
                 .await
-                .map_err(|e| StorageError::QueryFailed("GraphStore::count_edges".into(), e.to_string()))?;
-            #[derive(serde::Deserialize)]
+                .map_err(|e| StorageError::QueryFailed("GraphStore".into(), e.to_string()))?;
+            #[derive(surrealdb::types::SurrealValue)]
             struct CountResult { total: u64 }
             let rows: Vec<CountResult> = results.take(0)
                 .map_err(|e| StorageError::QueryFailed("GraphStore::count_edges".into(), e.to_string()))?;

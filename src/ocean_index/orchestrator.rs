@@ -20,7 +20,7 @@ use super::worker_pool::WorkerPool;
 fn stable_state_id(path: &str) -> String {
     let mut hasher = Sha256::new();
     hasher.update(path.as_bytes());
-    let hash = format!("{:x}", hasher.finalize());
+    let hash: String = hasher.finalize().iter().map(|b| format!("{:02x}", b)).collect();
     hash[..16].to_string()
 }
 

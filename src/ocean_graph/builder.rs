@@ -214,7 +214,7 @@ impl GraphBuilder {
     fn heading_id(file_id: &str, heading_text: &str) -> String {
         let mut hasher = Sha256::new();
         hasher.update(heading_text.as_bytes());
-        let hash = format!("{:x}", hasher.finalize());
+        let hash: String = hasher.finalize().iter().map(|b| format!("{:02x}", b)).collect();
         format!("heading:{}:{}", file_id, &hash[..16])
     }
 
@@ -222,7 +222,7 @@ impl GraphBuilder {
         let mut hasher = Sha256::new();
         hasher.update(file_id.as_bytes());
         hasher.update(name.as_bytes());
-        let hash = format!("{:x}", hasher.finalize());
+        let hash: String = hasher.finalize().iter().map(|b| format!("{:02x}", b)).collect();
         format!("entity:{}", &hash[..16])
     }
 }

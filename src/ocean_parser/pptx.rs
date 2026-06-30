@@ -102,7 +102,7 @@ impl PptxDocument {
 
     fn parse_slide_xml(xml: &str) -> (Option<String>, String) {
         let mut reader = Reader::from_str(xml);
-        reader.trim_text(true);
+        reader.config_mut().trim_text(true);
 
         let mut buf = Vec::new();
         let mut title: Option<String> = None;
@@ -155,7 +155,7 @@ impl PptxDocument {
                 }
                 Ok(Event::Text(ref e)) => {
                     if in_text {
-                        current_text.push_str(&e.unescape().unwrap_or_default());
+                        current_text.push_str(&quick_xml::escape::unescape(&e.decode().unwrap_or_default()).unwrap_or_default());
                     }
                 }
                 Ok(Event::Eof) => break,

@@ -1,4 +1,5 @@
 use surrealdb::engine::local::{Db, Mem, SurrealKv};
+use surrealdb::types::SurrealValue;
 use surrealdb::Surreal;
 use tokio::runtime::Runtime;
 
@@ -95,11 +96,10 @@ impl SurrealChunkStore {
 impl ChunkStore for SurrealChunkStore {
     fn insert_chunk(&self, chunk: &ChunkRecord) -> Result<(), StorageError> {
         let cid = chunk.chunk_id.clone();
-        let data = serde_json::json!(chunk);
         self.rt.block_on(async {
             self.db
                 .query(format!("CREATE chunk:`{}` CONTENT $data", cid))
-                .bind(("data", data))
+                .bind(("data", chunk.clone()))
                 .await
                 .map_err(|e| StorageError::QueryFailed("ChunkStore::insert_chunk".into(), e.to_string()))?;
             Ok::<_, StorageError>(())
@@ -108,11 +108,10 @@ impl ChunkStore for SurrealChunkStore {
 
     fn upsert_chunk(&self, chunk: &ChunkRecord) -> Result<(), StorageError> {
         let cid = chunk.chunk_id.clone();
-        let data = serde_json::json!(chunk);
         self.rt.block_on(async {
             self.db
                 .query(format!("UPSERT chunk:`{}` CONTENT $data", cid))
-                .bind(("data", data))
+                .bind(("data", chunk.clone()))
                 .await
                 .map_err(|e| StorageError::QueryFailed("ChunkStore::upsert_chunk".into(), e.to_string()))?;
             Ok::<_, StorageError>(())
@@ -155,7 +154,7 @@ impl ChunkStore for SurrealChunkStore {
                 .query("SELECT count() AS total FROM chunk GROUP BY count")
                 .await
                 .map_err(|e| StorageError::QueryFailed("ChunkStore::count".into(), e.to_string()))?;
-            #[derive(serde::Deserialize)]
+            #[derive(serde::Deserialize, SurrealValue)]
             struct CountResult {
                 total: u64,
             }
@@ -174,7 +173,7 @@ impl ChunkStore for SurrealChunkStore {
                 .bind(("hash", content_hash.to_string()))
                 .await
                 .map_err(|e| StorageError::QueryFailed("ChunkStore::chunk_exists".into(), e.to_string()))?;
-            #[derive(serde::Deserialize)]
+            #[derive(serde::Deserialize, SurrealValue)]
             struct ExistsResult {
                 cnt: u64,
             }

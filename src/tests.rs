@@ -93,3 +93,17 @@ mod cache_graph_spec;
 
 #[path = "ocean_cli/init_test.rs"]
 mod cli_init_spec;
+
+#[path = "ocean_mcp/tools/doc_tools_test.rs"]
+mod mcp_doc_tools_spec;
+#[path = "ocean_mcp/tools/query_tools_test.rs"]
+mod mcp_query_tools_spec;
+#[path = "ocean_mcp/tools/graph_tools_test.rs"]
+mod mcp_graph_tools_spec;
+#[path = "ocean_mcp/resources_test.rs"]
+mod mcp_resources_spec;
+#[path = "ocean_mcp/config_test.rs"]
+mod mcp_config_spec;
+
+#[path = "ocean_cli/mcp_setup/mcp_setup_test.rs"]
+mod mcp_setup_spec;

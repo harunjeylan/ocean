@@ -32,6 +32,8 @@ reqwest = { version = "0.12", default-features = false, features = ["json", "rus
 serde_json = "1"
 chrono = { version = "0.4", features = ["serde"] }
 rpassword = "7"
+rmcp = { version = "2", features = ["server", "transport-io"] }
+toml = "0.8"
 
 [[bin]]
 name = "ocean"
@@ -40,6 +42,10 @@ path = "src/main.rs"
 [[bin]]
 name = "cli"
 path = "src/cli.rs"
+
+[[bin]]
+name = "mcp"
+path = "src/mcp.rs"
 
 [dev-dependencies]
 tempfile = "3"

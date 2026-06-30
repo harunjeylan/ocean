@@ -16,11 +16,28 @@ use crate::ocean_cli::args::{
     VectorArgs, VectorCommands, VectorSearchArgs,
 };
 use crate::ocean_cli::config::OceanConfig;
+
+// TODO(v2.0): remove this function and all experimentals guards when vector/graph graduate to stable
+fn check_experimental(config: &Option<OceanConfig>, section: &str, cmd: &str) -> Result<(), String> {
+    let enabled = match section {
+        "vector" => config.as_ref().and_then(|c| c.experimentals.vector).unwrap_or(false),
+        "graph" => config.as_ref().and_then(|c| c.experimentals.graph).unwrap_or(false),
+        _ => false,
+    };
+    if !enabled {
+        return Err(format!(
+            "The '{}' command is experimental. Enable it by setting \"experimentals\": {{ \"{}\": true }} in .ocean/config.json",
+            cmd, section
+        ));
+    }
+    Ok(())
+}
 use crate::ocean_cli::display::*;
 use crate::ocean_cli::events::{global_emitter, set_global_emitter, ConsoleEmitter, JsonEmitter, MultiEmitter, OutputTarget, SystemEvent};
 use crate::ocean_storage::readonly::ReadOnlyGuard;
 use crate::ocean_cli::metrics::{global_metrics, print_metrics};
 use crate::ocean_cli::init::cmd_init;
+use crate::ocean_cli::mcp_setup::cmd_mcp_setup;
 use crate::ocean_cli::runtime::RuntimeMode;
 use crate::ocean_fs::*;
 use crate::ocean_parser::*;
@@ -35,8 +52,14 @@ pub fn run() -> Result<(), String> {
     ReadOnlyGuard::set_global_enabled(read_only);
 
     match cli.command {
-        Commands::Index(ref args) => return cmd_index(args.clone(), &cli, &config),
-        Commands::Query(ref args) => return cmd_query(args.clone(), &cli, &config),
+        Commands::Index(ref args) => {
+            check_experimental(&config, "vector", "index")?; // TODO(v2.0): remove — graduates with vector
+            return cmd_index(args.clone(), &cli, &config);
+        }
+        Commands::Query(ref args) => {
+            check_experimental(&config, "vector", "query")?; // TODO(v2.0): remove — graduates with vector
+            return cmd_query(args.clone(), &cli, &config);
+        }
         _ => {}
     }
 
@@ -80,11 +103,21 @@ pub fn run() -> Result<(), String> {
         Commands::Chunk(args) => cmd_chunk(args),
         Commands::Index(_) => unreachable!(),
         Commands::Query(_) => unreachable!(),
-        Commands::VectorSearch(args) => cmd_vector_search(args, &config),
-        Commands::Vector(args) => cmd_vector(args),
-        Commands::Graph(args) => cmd_graph(args),
+        Commands::VectorSearch(args) => {
+            check_experimental(&config, "vector", "vector-search")?; // TODO(v2.0): remove — graduates with vector
+            cmd_vector_search(args, &config)
+        }
+        Commands::Vector(args) => {
+            check_experimental(&config, "vector", "vector")?; // TODO(v2.0): remove — graduates with vector
+            cmd_vector(args)
+        }
+        Commands::Graph(args) => {
+            check_experimental(&config, "graph", "graph")?; // TODO(v2.0): remove — graduates with graph
+            cmd_graph(args)
+        }
         Commands::Config(args) => cmd_config(args, &config),
         Commands::Init(args) => cmd_init(args.dir),
+        Commands::McpSetup(args) => cmd_mcp_setup(args.agent, args.write),
     }
 }
 

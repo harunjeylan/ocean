@@ -40,6 +40,14 @@ pub enum Commands {
     Vector(VectorArgs),
     Config(ConfigArgs),
     Init(InitArgs),
+    McpSetup(McpSetupArgs),
+}
+
+#[derive(Args)]
+pub struct McpSetupArgs {
+    pub agent: Option<String>,
+    #[arg(long)]
+    pub write: bool,
 }
 
 #[derive(Args)]

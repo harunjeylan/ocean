@@ -23,11 +23,8 @@ pub fn query(request: QueryRequest) -> Result<crate::ocean_query::QueryResult, A
     let dimension = EmbeddingConfig::resolve_dimension(request.dimension, None, &provider, &model);
 
     let base_path = request.db_path.as_deref().unwrap_or("");
-    let mut engine = QueryEngine::new_with_paths(
-        &format!("{}/vector.db", base_path),
-        &format!("{}/graph.db", base_path),
-        dimension,
-    )?;
+    let config = StorageConfig::new(base_path);
+    let mut engine = QueryEngine::new_persistent(&config, dimension)?;
 
     let no_cache = request.no_cache;
     engine = if !no_cache {
@@ -78,11 +75,8 @@ pub fn vector_search(request: VectorSearchRequest) -> Result<Vec<SearchResult>, 
     let model = EmbeddingConfig::resolve_model(request.model.as_deref(), None);
 
     let base_path = request.db_path.as_deref().unwrap_or("");
-    let vector_path = format!("{}/vector.db", base_path);
-    let graph_path = format!("{}/graph.db", base_path);
-
-    let vconfig = StorageConfig::new(&vector_path);
-    let vstore = SurrealVectorStore::new_persistent_at(&vector_path, &vconfig)
+    let config = StorageConfig::new(base_path);
+    let vstore = SurrealVectorStore::new_persistent(&config)
         .map_err(|e| ApiError::QueryError(format!("Failed to open store: {}", e)))?;
     let engine = SearchEngine::new(std::sync::Arc::new(vstore));
 
@@ -127,8 +121,7 @@ pub fn vector_search(request: VectorSearchRequest) -> Result<Vec<SearchResult>, 
     let mut results = results.map_err(|e| ApiError::QueryError(format!("Search failed: {}", e)))?;
 
     if request.expand_depth > 0 {
-        let gconfig = StorageConfig::new(&graph_path);
-        if let Ok(gs) = SurrealGraphStore::new_persistent_at(&graph_path, &gconfig) {
+        if let Ok(gs) = SurrealGraphStore::new_persistent(&config) {
             if gs.initialize_schema().is_ok() {
                 let expansion = crate::ocean_graph::ExpansionEngine::new(std::sync::Arc::new(gs));
                 results = crate::ocean_query::engine::expand_results(&results, &expansion, request.expand_depth, engine.store_ref());

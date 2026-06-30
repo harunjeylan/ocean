@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 fn resolve_env_vars(s: &str) -> String {
     let mut result = String::new();
@@ -24,7 +24,7 @@ fn resolve_env_vars(s: &str) -> String {
     result
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct EmbeddingConfig {
     pub provider: Option<String>,
@@ -34,19 +34,7 @@ pub struct EmbeddingConfig {
     pub base_url: Option<String>,
 }
 
-impl Default for EmbeddingConfig {
-    fn default() -> Self {
-        Self {
-            provider: None,
-            model: None,
-            dimension: None,
-            api_key: None,
-            base_url: None,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct IndexConfigOpt {
     pub batch_size: Option<usize>,
@@ -57,20 +45,7 @@ pub struct IndexConfigOpt {
     pub no_entities: Option<bool>,
 }
 
-impl Default for IndexConfigOpt {
-    fn default() -> Self {
-        Self {
-            batch_size: None,
-            db_path: None,
-            reindex: None,
-            no_graph: None,
-            no_references: None,
-            no_entities: None,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct QueryConfigOpt {
     pub top_k: Option<usize>,
@@ -82,21 +57,7 @@ pub struct QueryConfigOpt {
     pub verbose: Option<bool>,
 }
 
-impl Default for QueryConfigOpt {
-    fn default() -> Self {
-        Self {
-            top_k: None,
-            db_path: None,
-            mode: None,
-            expand_depth: None,
-            context: None,
-            context_chunks: None,
-            verbose: None,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct CacheConfigOpt {
     pub embedding_cache_size: Option<usize>,
@@ -107,22 +68,10 @@ pub struct CacheConfigOpt {
     pub enabled: Option<bool>,
 }
 
-impl Default for CacheConfigOpt {
-    fn default() -> Self {
-        Self {
-            embedding_cache_size: None,
-            query_cache_size: None,
-            graph_cache_size: None,
-            query_ttl_secs: None,
-            embedding_cache_path: None,
-            enabled: None,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct RuntimeConfigOpt {
+    pub mode: Option<String>,
     pub io_threads: Option<usize>,
     pub cpu_threads: Option<usize>,
     pub max_ai_concurrent: Option<usize>,
@@ -132,44 +81,30 @@ pub struct RuntimeConfigOpt {
     pub max_in_flight: Option<usize>,
 }
 
-impl Default for RuntimeConfigOpt {
-    fn default() -> Self {
-        Self {
-            io_threads: None,
-            cpu_threads: None,
-            max_ai_concurrent: None,
-            max_retries: None,
-            retry_backoff_ms: None,
-            max_queue_size: None,
-            max_in_flight: None,
-        }
-    }
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct SecurityConfigOpt {
+    pub sandbox: Option<bool>,
+    pub read_only: Option<bool>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ObservabilityConfigOpt {
+    pub log_format: Option<String>,
+    pub log_file: Option<String>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(default)]
 pub struct OceanConfig {
-    #[serde(default)]
     pub embedding: EmbeddingConfig,
-    #[serde(default)]
     pub index: IndexConfigOpt,
-    #[serde(default)]
     pub query: QueryConfigOpt,
-    #[serde(default)]
     pub runtime: RuntimeConfigOpt,
-    #[serde(default)]
     pub cache: CacheConfigOpt,
-}
-
-impl Default for OceanConfig {
-    fn default() -> Self {
-        Self {
-            embedding: EmbeddingConfig::default(),
-            index: IndexConfigOpt::default(),
-            query: QueryConfigOpt::default(),
-            runtime: RuntimeConfigOpt::default(),
-            cache: CacheConfigOpt::default(),
-        }
-    }
+    pub security: SecurityConfigOpt,
+    pub observability: ObservabilityConfigOpt,
 }
 
 impl OceanConfig {
@@ -209,7 +144,54 @@ impl OceanConfig {
             None
         }
     }
+
+    pub fn validate(&self) -> Result<(), Vec<String>> {
+        let mut errors = Vec::new();
+
+        if let Some(ref mode) = self.runtime.mode {
+            let valid = matches!(mode.to_lowercase().as_str(), "desktop" | "server" | "embedded");
+            if !valid {
+                errors.push(format!("runtime.mode: invalid value '{}'. Use: desktop, server, embedded", mode));
+            }
+        }
+
+        if let Some(ref fmt) = self.observability.log_format {
+            let valid = matches!(fmt.to_lowercase().as_str(), "console" | "json");
+            if !valid {
+                errors.push(format!("observability.log_format: invalid value '{}'. Use: console, json", fmt));
+            }
+        }
+
+        if errors.is_empty() {
+            Ok(())
+        } else {
+            Err(errors)
+        }
+    }
 }
+
+#[derive(Debug)]
+pub enum ConfigError {
+    NotFound,
+    ParseError { path: PathBuf, detail: String },
+    ValidationError { fields: Vec<String> },
+}
+
+impl std::fmt::Display for ConfigError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ConfigError::NotFound => write!(f, "config file not found"),
+            ConfigError::ParseError { path, detail } => {
+                write!(f, "failed to parse config at '{}': {}", path.display(), detail)
+            }
+            ConfigError::ValidationError { fields } => {
+                write!(f, "config validation failed: {}", fields.join(", "))
+            }
+        }
+    }
+}
+
+impl std::error::Error for ConfigError {}
 
 fn merge_config(base: &mut OceanConfig, partial: OceanConfig) {
     macro_rules! merge_opt {
@@ -238,6 +220,7 @@ fn merge_config(base: &mut OceanConfig, partial: OceanConfig) {
     merge_opt!(base.query.context, partial.query.context);
     merge_opt!(base.query.context_chunks, partial.query.context_chunks);
     merge_opt!(base.query.verbose, partial.query.verbose);
+    merge_opt!(base.runtime.mode, partial.runtime.mode);
     merge_opt!(base.runtime.io_threads, partial.runtime.io_threads);
     merge_opt!(base.runtime.cpu_threads, partial.runtime.cpu_threads);
     merge_opt!(base.runtime.max_ai_concurrent, partial.runtime.max_ai_concurrent);
@@ -251,6 +234,10 @@ fn merge_config(base: &mut OceanConfig, partial: OceanConfig) {
     merge_opt!(base.cache.query_ttl_secs, partial.cache.query_ttl_secs);
     merge_opt!(base.cache.embedding_cache_path, partial.cache.embedding_cache_path);
     merge_opt!(base.cache.enabled, partial.cache.enabled);
+    merge_opt!(base.security.sandbox, partial.security.sandbox);
+    merge_opt!(base.security.read_only, partial.security.read_only);
+    merge_opt!(base.observability.log_format, partial.observability.log_format);
+    merge_opt!(base.observability.log_file, partial.observability.log_file);
 }
 
 pub fn resolve_api_key(cli_key: Option<&str>, config_key: Option<&str>, env_var: Option<&str>) -> Option<String> {

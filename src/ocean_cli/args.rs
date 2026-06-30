@@ -5,11 +5,19 @@ use clap::{Args, Parser, Subcommand};
 pub struct Cli {
     #[command(subcommand)]
     pub command: Commands,
+    #[arg(long, global = true)]
+    pub log_format: Option<String>,
+    #[arg(long, global = true)]
+    pub log_file: Option<String>,
 }
 
 #[derive(Subcommand)]
 pub enum Commands {
-    Info { file: String },
+    Info {
+        file: String,
+        #[arg(long)]
+        metrics: bool,
+    },
     Metadata { file: String },
     Outline { file: String },
     PageCount { file: String },
@@ -19,12 +27,17 @@ pub enum Commands {
     Scan { dir: String, #[arg(long)] no_hash: bool },
     Hash { file: String },
     Verify { file: String, hash: String },
-    Watch { dir: String },
+    Watch {
+        dir: String,
+        #[arg(long)]
+        no_sandbox: bool,
+    },
     Chunk(ChunkArgs),
     Index(IndexArgs),
     Query(QueryArgs),
     VectorSearch(VectorSearchArgs),
     Graph(GraphArgs),
+    Config(ConfigArgs),
 }
 
 #[derive(Args)]
@@ -105,7 +118,7 @@ pub struct ChunkArgs {
     pub rows_per_chunk: usize,
 }
 
-#[derive(Args)]
+#[derive(Args, Clone)]
 pub struct IndexArgs {
     pub dir: String,
     #[arg(long)]
@@ -120,8 +133,8 @@ pub struct IndexArgs {
     pub dimension: Option<usize>,
     #[arg(long)]
     pub db_path: Option<String>,
-    #[arg(long, default_value_t = 10)]
-    pub batch_size: usize,
+    #[arg(long)]
+    pub batch_size: Option<usize>,
     #[arg(long)]
     pub reindex: bool,
     #[arg(long)]
@@ -132,6 +145,10 @@ pub struct IndexArgs {
     pub no_entities: bool,
     #[arg(long)]
     pub watch: bool,
+    #[arg(long)]
+    pub mode: Option<String>,
+    #[arg(long)]
+    pub no_sandbox: bool,
     #[arg(long)]
     pub io_threads: Option<usize>,
     #[arg(long)]
@@ -146,13 +163,19 @@ pub struct IndexArgs {
     pub max_queue_size: Option<usize>,
     #[arg(long)]
     pub max_in_flight: Option<usize>,
+    #[arg(long)]
+    pub log_format: Option<String>,
+    #[arg(long)]
+    pub log_file: Option<String>,
 }
 
-#[derive(Args)]
+#[derive(Args, Clone)]
 pub struct QueryArgs {
     pub query: String,
     #[arg(long)]
     pub mode: Option<String>,
+    #[arg(long)]
+    pub read_only: bool,
     #[arg(long, default_value_t = 10)]
     pub top_k: usize,
     #[arg(long, default_value_t = 0)]
@@ -187,6 +210,22 @@ pub struct QueryArgs {
     pub dimension: Option<usize>,
     #[arg(long)]
     pub db_path: Option<String>,
+    #[arg(long)]
+    pub log_format: Option<String>,
+    #[arg(long)]
+    pub log_file: Option<String>,
+}
+
+#[derive(Args)]
+pub struct ConfigArgs {
+    #[command(subcommand)]
+    pub command: ConfigCommands,
+}
+
+#[derive(Subcommand)]
+pub enum ConfigCommands {
+    Show,
+    Validate,
 }
 
 #[derive(Args)]

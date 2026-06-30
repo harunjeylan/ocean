@@ -57,6 +57,18 @@ impl From<crate::ocean_vector::EmbedderError> for ApiError {
     }
 }
 
+impl From<crate::ocean_cli::config::ConfigError> for ApiError {
+    fn from(e: crate::ocean_cli::config::ConfigError) -> Self {
+        ApiError::ConfigError(e.to_string())
+    }
+}
+
+impl From<crate::ocean_cli::sandbox::SecurityError> for ApiError {
+    fn from(e: crate::ocean_cli::sandbox::SecurityError) -> Self {
+        ApiError::IndexError(e.to_string())
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct DocResult {
     pub metadata: crate::ocean_parser::DocumentMetadata,
@@ -105,6 +117,9 @@ pub struct IndexRequest {
     pub retry_backoff_ms: Option<u64>,
     pub max_queue_size: Option<usize>,
     pub max_in_flight: Option<usize>,
+    pub mode: Option<String>,
+    pub no_sandbox: bool,
+    pub embedding_cache_size: Option<usize>,
 }
 
 #[derive(Debug, Clone)]
@@ -127,6 +142,7 @@ pub struct QueryRequest {
     pub api_key: Option<String>,
     pub base_url: Option<String>,
     pub db_path: Option<String>,
+    pub read_only: Option<bool>,
 }
 
 #[derive(Debug, Clone)]

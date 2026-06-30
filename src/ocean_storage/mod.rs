@@ -6,6 +6,7 @@ pub mod vector_store;
 pub mod graph_store;
 pub mod state_store;
 pub mod transaction;
+pub mod readonly;
 
 mod file_store_impl;
 mod chunk_store_impl;

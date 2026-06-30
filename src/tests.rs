@@ -71,6 +71,17 @@ mod index_rate_limiter_spec;
 #[path = "ocean_index/orchestrator_test.rs"]
 mod index_orchestrator_spec;
 
+#[path = "ocean_cli/runtime_test.rs"]
+mod cli_runtime_spec;
+#[path = "ocean_cli/events_test.rs"]
+mod cli_events_spec;
+#[path = "ocean_cli/metrics_test.rs"]
+mod cli_metrics_spec;
+#[path = "ocean_cli/sandbox_test.rs"]
+mod cli_sandbox_spec;
+#[path = "ocean_storage/readonly_test.rs"]
+mod storage_readonly_spec;
+
 #[path = "ocean_cache/lru_test.rs"]
 mod cache_lru_spec;
 #[path = "ocean_cache/embedding_cache_test.rs"]

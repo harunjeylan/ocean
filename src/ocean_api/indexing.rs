@@ -1,7 +1,11 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use crate::ocean_cache::EmbeddingCache;
 use crate::ocean_chunk::ChunkConfig;
+use crate::ocean_cli::events::{global_emitter, unix_millis, SystemEvent};
+use crate::ocean_cli::metrics::global_metrics;
+use crate::ocean_cli::sandbox::Sandbox;
 use crate::ocean_graph::GraphConfig;
 use crate::ocean_index::config::{BackpressureConfig, IndexConfig as OceanIndexConfig, RateLimiterConfig};
 use crate::ocean_index::progress::ConsoleReporter;
@@ -19,6 +23,10 @@ pub fn index_directory(request: IndexRequest) -> Result<IndexResult, ApiError> {
     let dir_path = PathBuf::from(&request.dir);
     if !dir_path.is_dir() {
         return Err(ApiError::DocError(format!("directory not found: {}", request.dir)));
+    }
+
+    if !request.no_sandbox {
+        let _sandbox = Sandbox::new(&dir_path)?;
     }
 
     let files = crate::ocean_cli::walk::walk_supported_files(&dir_path);
@@ -129,9 +137,31 @@ pub fn index_directory(request: IndexRequest) -> Result<IndexResult, ApiError> {
         Arc::new(ConsoleReporter),
     );
 
+    let embed_cache_size = request.embedding_cache_size.unwrap_or(1000);
     let embed_cache_path = format!("{}/cache", request.db_path.as_deref().unwrap_or(""));
-    let embed_cache = crate::ocean_cache::EmbeddingCache::new(1000, Some(&embed_cache_path));
+    let embed_cache = EmbeddingCache::new(embed_cache_size, Some(&embed_cache_path));
     let orchestrator = orchestrator.with_embed_cache(embed_cache);
 
-    orchestrator.run(index_config).map_err(|e| ApiError::IndexError(e.to_string()))
+    global_emitter().emit(SystemEvent::IndexStarted {
+        timestamp: unix_millis(),
+        dir: index_config.dir.clone(),
+        total_files: files.len() as u64,
+    });
+
+    let report = orchestrator.run(index_config).map_err(|e| ApiError::IndexError(e.to_string()))?;
+
+    let metrics = global_metrics();
+    metrics.files_indexed.fetch_add(report.indexed, std::sync::atomic::Ordering::Relaxed);
+    metrics.files_skipped.fetch_add(report.skipped, std::sync::atomic::Ordering::Relaxed);
+    metrics.files_failed.fetch_add(report.failed, std::sync::atomic::Ordering::Relaxed);
+
+    global_emitter().emit(SystemEvent::IndexComplete {
+        timestamp: unix_millis(),
+        duration_ms: report.duration_ms,
+        indexed: report.indexed,
+        skipped: report.skipped,
+        failed: report.failed,
+    });
+
+    Ok(report)
 }

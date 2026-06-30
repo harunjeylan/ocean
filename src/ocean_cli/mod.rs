@@ -3,9 +3,17 @@ pub mod config;
 pub mod display;
 pub mod walk;
 pub mod run;
+pub mod runtime;
+pub mod events;
+pub mod metrics;
+pub mod sandbox;
 
 pub use args::*;
 pub use config::*;
 pub use display::*;
 pub use walk::*;
 pub use run::*;
+pub use runtime::*;
+pub use events::*;
+pub use metrics::*;
+pub use sandbox::*;

@@ -12,11 +12,15 @@ use crate::ocean_api::querying as api_query;
 use crate::ocean_api::types::*;
 use crate::ocean_chunk::ChunkConfig;
 use crate::ocean_cli::args::{
-    ChunkArgs, Cli, Commands, GraphArgs, GraphCommands, IndexArgs, QueryArgs, ReadArgs,
+    ChunkArgs, Cli, Commands, ConfigArgs, ConfigCommands, GraphArgs, GraphCommands, IndexArgs, QueryArgs, ReadArgs,
     VectorSearchArgs,
 };
 use crate::ocean_cli::config::OceanConfig;
 use crate::ocean_cli::display::*;
+use crate::ocean_cli::events::{global_emitter, set_global_emitter, ConsoleEmitter, JsonEmitter, MultiEmitter, OutputTarget, SystemEvent};
+use crate::ocean_storage::readonly::ReadOnlyGuard;
+use crate::ocean_cli::metrics::{global_metrics, print_metrics};
+use crate::ocean_cli::runtime::RuntimeMode;
 use crate::ocean_fs::*;
 use crate::ocean_parser::*;
 
@@ -26,23 +30,85 @@ pub fn run() -> Result<(), String> {
 
     let cli = Cli::parse();
 
+    let read_only = config.as_ref().and_then(|c| c.security.read_only).unwrap_or(false);
+    ReadOnlyGuard::set_global_enabled(read_only);
+
     match cli.command {
-        Commands::Info { file } => cmd_info(file),
+        Commands::Index(ref args) => return cmd_index(args.clone(), &cli, &config),
+        Commands::Query(ref args) => return cmd_query(args.clone(), &cli, &config),
+        _ => {}
+    }
+
+    setup_event_emitters(
+        cli.log_format.as_deref()
+            .or_else(|| config.as_ref().and_then(|c| c.observability.log_format.as_deref()))
+            .unwrap_or("console"),
+        cli.log_file.as_deref()
+            .or_else(|| config.as_ref().and_then(|c| c.observability.log_file.as_deref())),
+    );
+
+    match cli.command {
+        Commands::Info { file, metrics } => {
+            if metrics {
+                cmd_info_metrics();
+                Ok(())
+            } else {
+                cmd_info(file)
+            }
+        }
         Commands::Metadata { file } => cmd_metadata(file),
         Commands::Outline { file } => cmd_outline(file),
         Commands::PageCount { file } => cmd_page_count(file),
         Commands::Search { file, query } => cmd_search(file, query),
         Commands::Grep { dir, query } => cmd_grep(dir, query),
         Commands::Read(args) => cmd_read(args),
-        Commands::Scan { dir, no_hash } => cmd_scan(dir, no_hash),
+        Commands::Scan { dir, no_hash } => {
+            if read_only {
+                return Err("scan is disabled in read-only mode".to_string());
+            }
+            cmd_scan(dir, no_hash)
+        }
         Commands::Hash { file } => cmd_hash(file),
         Commands::Verify { file, hash } => cmd_verify(file, hash),
-        Commands::Watch { dir } => cmd_watch(dir),
+        Commands::Watch { dir, no_sandbox } => {
+            if read_only {
+                return Err("watch is disabled in read-only mode".to_string());
+            }
+            cmd_watch(dir, no_sandbox)
+        }
         Commands::Chunk(args) => cmd_chunk(args),
-        Commands::Index(args) => cmd_index(args, &config),
-        Commands::Query(args) => cmd_query(args, &config),
+        Commands::Index(_) => unreachable!(),
+        Commands::Query(_) => unreachable!(),
         Commands::VectorSearch(args) => cmd_vector_search(args, &config),
         Commands::Graph(args) => cmd_graph(args),
+        Commands::Config(args) => cmd_config(args, &config),
+    }
+}
+
+fn setup_event_emitters(log_format: &str, log_file: Option<&str>) {
+    let emitters: Vec<Box<dyn crate::ocean_cli::events::EventEmitter>> = match log_format {
+        "json" => {
+            let target = if let Some(path) = log_file {
+                OutputTarget::File(std::path::PathBuf::from(path))
+            } else {
+                OutputTarget::Stderr
+            };
+            vec![Box::new(JsonEmitter::new(target))]
+        }
+        _ => {
+            let mut emitters: Vec<Box<dyn crate::ocean_cli::events::EventEmitter>> = vec![Box::new(ConsoleEmitter)];
+            if let Some(path) = log_file {
+                let target = OutputTarget::File(std::path::PathBuf::from(path));
+                emitters.push(Box::new(JsonEmitter::new(target)));
+            }
+            emitters
+        }
+    };
+
+    if emitters.len() == 1 {
+        set_global_emitter(emitters.into_iter().next().unwrap());
+    } else {
+        set_global_emitter(Box::new(MultiEmitter::new(emitters)));
     }
 }
 
@@ -58,6 +124,11 @@ fn cmd_info(file: String) -> Result<(), String> {
         println!("Outline: (empty)");
     }
     Ok(())
+}
+
+fn cmd_info_metrics() {
+    let snapshot = global_metrics().snapshot();
+    print_metrics(&snapshot);
 }
 
 fn cmd_metadata(file: String) -> Result<(), String> {
@@ -190,7 +261,13 @@ fn cmd_verify(file: String, hash: String) -> Result<(), String> {
     Ok(())
 }
 
-fn cmd_watch(dir: String) -> Result<(), String> {
+fn cmd_watch(dir: String, no_sandbox: bool) -> Result<(), String> {
+    if !no_sandbox {
+        let dir_path = std::path::Path::new(&dir);
+        let _sandbox = crate::ocean_cli::sandbox::Sandbox::new(dir_path)
+            .map_err(|e| format!("Sandbox init failed: {}", e))?;
+    }
+
     let watcher = FileWatcher::new();
     let (tx, rx) = mpsc::channel::<FileEvent>();
 
@@ -253,7 +330,23 @@ fn cmd_chunk(args: ChunkArgs) -> Result<(), String> {
     Ok(())
 }
 
-fn cmd_index(args: IndexArgs, config: &Option<OceanConfig>) -> Result<(), String> {
+fn cmd_index(args: IndexArgs, cli: &Cli, config: &Option<OceanConfig>) -> Result<(), String> {
+    let read_only = config.as_ref().and_then(|c| c.security.read_only).unwrap_or(false);
+    if read_only {
+        ReadOnlyGuard::set_global_enabled(true);
+        return Err("indexing is disabled in read-only mode".to_string());
+    }
+
+    setup_event_emitters(
+        args.log_format.as_deref()
+            .or_else(|| cli.log_format.as_deref())
+            .or_else(|| config.as_ref().and_then(|c| c.observability.log_format.as_deref()))
+            .unwrap_or("console"),
+        args.log_file.as_deref()
+            .or_else(|| cli.log_file.as_deref())
+            .or_else(|| config.as_ref().and_then(|c| c.observability.log_file.as_deref())),
+    );
+
     let provider = EmbeddingConfig::resolve_provider(args.provider.as_deref(),
         config.as_ref().and_then(|c| c.embedding.provider.as_deref()));
     let model = EmbeddingConfig::resolve_model(args.model.as_deref(),
@@ -283,14 +376,40 @@ fn cmd_index(args: IndexArgs, config: &Option<OceanConfig>) -> Result<(), String
         config.as_ref().and_then(|c| c.embedding.base_url.as_deref()),
     );
 
-    let runtime = config.as_ref().map(|c| &c.runtime);
-    let io_threads = args.io_threads.or_else(|| runtime.and_then(|r| r.io_threads));
-    let cpu_threads = args.cpu_threads.or_else(|| runtime.and_then(|r| r.cpu_threads));
-    let max_ai_concurrent = args.max_ai_concurrent.or_else(|| runtime.and_then(|r| r.max_ai_concurrent));
-    let max_retries = args.max_retries.or_else(|| runtime.and_then(|r| r.max_retries));
-    let retry_backoff_ms = args.retry_backoff_ms.or_else(|| runtime.and_then(|r| r.retry_backoff_ms));
-    let max_queue_size = args.max_queue_size.or_else(|| runtime.and_then(|r| r.max_queue_size));
-    let max_in_flight = args.max_in_flight.or_else(|| runtime.and_then(|r| r.max_in_flight));
+    let runtime_config = config.as_ref().map(|c| &c.runtime);
+    let mode = RuntimeMode::resolve(
+        args.mode.as_deref(),
+        runtime_config.and_then(|r| r.mode.as_deref()),
+    );
+    let mode_defaults = mode.defaults();
+
+    let cpus = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(4);
+    let io_threads = args.io_threads
+        .or_else(|| runtime_config.and_then(|r| r.io_threads))
+        .or(mode_defaults.io_threads)
+        .unwrap_or(cpus * 2);
+    let cpu_threads = args.cpu_threads
+        .or_else(|| runtime_config.and_then(|r| r.cpu_threads))
+        .or(mode_defaults.cpu_threads)
+        .unwrap_or(cpus);
+    let max_ai_concurrent = args.max_ai_concurrent
+        .or_else(|| runtime_config.and_then(|r| r.max_ai_concurrent))
+        .or(mode_defaults.max_ai_concurrent);
+    let max_retries = args.max_retries
+        .or_else(|| runtime_config.and_then(|r| r.max_retries));
+    let retry_backoff_ms = args.retry_backoff_ms
+        .or_else(|| runtime_config.and_then(|r| r.retry_backoff_ms));
+    let max_queue_size = args.max_queue_size
+        .or_else(|| runtime_config.and_then(|r| r.max_queue_size))
+        .or(mode_defaults.max_queue_size);
+    let max_in_flight = args.max_in_flight
+        .or_else(|| runtime_config.and_then(|r| r.max_in_flight))
+        .or(mode_defaults.max_in_flight);
+    let embedding_cache_size = mode_defaults.embedding_cache_size_value();
+    let batch_size = args.batch_size
+        .or_else(|| config.as_ref().and_then(|c| c.index.batch_size))
+        .or(mode_defaults.embedding_batch_size)
+        .unwrap_or(10);
 
     let request = IndexRequest {
         dir: args.dir,
@@ -300,23 +419,46 @@ fn cmd_index(args: IndexArgs, config: &Option<OceanConfig>) -> Result<(), String
         db_path: Some(base_path),
         api_key,
         base_url: Some(base_url),
-        batch_size: args.batch_size,
+        batch_size,
         reindex: args.reindex,
         no_graph: args.no_graph,
         no_references: args.no_references,
         no_entities: args.no_entities,
         watch: args.watch,
         chunk_config: None,
-        io_threads,
-        cpu_threads,
+        io_threads: Some(io_threads),
+        cpu_threads: Some(cpu_threads),
         max_ai_concurrent,
         max_retries,
         retry_backoff_ms,
         max_queue_size,
         max_in_flight,
+        mode: Some(format!("{:?}", mode).to_lowercase()),
+        no_sandbox: args.no_sandbox,
+        embedding_cache_size: Some(embedding_cache_size),
     };
 
+    global_emitter().emit(SystemEvent::IndexStarted {
+        timestamp: crate::ocean_cli::events::unix_millis(),
+        dir: request.dir.clone(),
+        total_files: 0,
+    });
+
     let report = api_index::index_directory(request).map_err(|e| e.to_string())?;
+
+    global_emitter().emit(SystemEvent::IndexComplete {
+        timestamp: crate::ocean_cli::events::unix_millis(),
+        duration_ms: report.duration_ms,
+        indexed: report.indexed,
+        skipped: report.skipped,
+        failed: report.failed,
+    });
+
+    let metrics = global_metrics();
+    metrics.files_indexed.fetch_add(report.indexed, std::sync::atomic::Ordering::Relaxed);
+    metrics.files_skipped.fetch_add(report.skipped, std::sync::atomic::Ordering::Relaxed);
+    metrics.files_failed.fetch_add(report.failed, std::sync::atomic::Ordering::Relaxed);
+
     if report.failed > 0 {
         Err(format!("Indexing completed with {} failures.", report.failed))
     } else {
@@ -324,7 +466,17 @@ fn cmd_index(args: IndexArgs, config: &Option<OceanConfig>) -> Result<(), String
     }
 }
 
-fn cmd_query(args: QueryArgs, config: &Option<OceanConfig>) -> Result<(), String> {
+fn cmd_query(args: QueryArgs, cli: &Cli, config: &Option<OceanConfig>) -> Result<(), String> {
+    setup_event_emitters(
+        args.log_format.as_deref()
+            .or_else(|| cli.log_format.as_deref())
+            .or_else(|| config.as_ref().and_then(|c| c.observability.log_format.as_deref()))
+            .unwrap_or("console"),
+        args.log_file.as_deref()
+            .or_else(|| cli.log_file.as_deref())
+            .or_else(|| config.as_ref().and_then(|c| c.observability.log_file.as_deref())),
+    );
+
     let provider = EmbeddingConfig::resolve_provider(args.provider.as_deref(),
         config.as_ref().and_then(|c| c.embedding.provider.as_deref()));
     let model = EmbeddingConfig::resolve_model(args.model.as_deref(),
@@ -333,6 +485,12 @@ fn cmd_query(args: QueryArgs, config: &Option<OceanConfig>) -> Result<(), String
     let mode = args.mode.clone().or_else(|| {
         config.as_ref().and_then(|c| c.query.mode.clone())
     });
+
+    let read_only = args.read_only ||
+        config.as_ref().and_then(|c| c.security.read_only).unwrap_or(false);
+    if read_only {
+        ReadOnlyGuard::set_global_enabled(true);
+    }
 
     let base_path = crate::ocean_cli::config::resolve_db_path(
         args.db_path.as_deref(),
@@ -358,6 +516,9 @@ fn cmd_query(args: QueryArgs, config: &Option<OceanConfig>) -> Result<(), String
         config.as_ref().and_then(|c| c.embedding.base_url.as_deref()),
     );
 
+    let query_text = args.query.clone();
+    let start = std::time::Instant::now();
+
     let request = QueryRequest {
         text: args.query,
         mode,
@@ -377,9 +538,25 @@ fn cmd_query(args: QueryArgs, config: &Option<OceanConfig>) -> Result<(), String
         api_key,
         base_url: Some(base_url),
         db_path: Some(base_path),
+        read_only: Some(read_only),
     };
 
+    let metrics = global_metrics();
+    metrics.queries_total.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+
     let result = api_query::query(request).map_err(|e| e.to_string())?;
+
+    let duration_ms = start.elapsed().as_millis() as u64;
+
+    global_emitter().emit(SystemEvent::QueryExecuted {
+        timestamp: crate::ocean_cli::events::unix_millis(),
+        query: query_text,
+        mode: format!("{:?}", result.execution.query_mode),
+        num_results: result.results.len(),
+        duration_ms,
+        cached: false,
+    });
+
     print_query_result(&result, args.verbose);
     Ok(())
 }
@@ -491,7 +668,7 @@ fn cmd_graph(args: GraphArgs) -> Result<(), String> {
 fn cmd_graph_info(file: String, db_path: String) -> Result<(), String> {
     let info = api_graph::graph_info(&file, &db_path).map_err(|e| e.to_string())?;
     print_graph_info(info.node_count, info.edge_count,
-        info.type_breakdown.into_iter().map(|(nt, c)| (nt, c)).collect());
+        info.type_breakdown.into_iter().collect());
     Ok(())
 }
 
@@ -508,6 +685,53 @@ fn cmd_graph_path(from: String, to: String, max_depth: usize, db_path: String) -
     match path {
         Some(edges) => print_graph_path(&edges),
         None => println!("No path found between '{}' and '{}' within {} hops.", from, to, max_depth),
+    }
+    Ok(())
+}
+
+fn cmd_config(args: ConfigArgs, config: &Option<OceanConfig>) -> Result<(), String> {
+    match args.command {
+        ConfigCommands::Show => cmd_config_show(config),
+        ConfigCommands::Validate => cmd_config_validate(config),
+    }
+}
+
+fn cmd_config_show(config: &Option<OceanConfig>) -> Result<(), String> {
+    match config {
+        Some(cfg) => {
+            let json = serde_json::to_string_pretty(cfg)
+                .map_err(|e| format!("Failed to serialize config: {}", e))?;
+            println!("{}", json);
+        }
+        None => {
+            println!("No config file found. Using defaults.");
+            let default_cfg = OceanConfig::default();
+            let json = serde_json::to_string_pretty(&default_cfg)
+                .map_err(|e| format!("Failed to serialize config: {}", e))?;
+            println!("{}", json);
+        }
+    }
+    Ok(())
+}
+
+fn cmd_config_validate(config: &Option<OceanConfig>) -> Result<(), String> {
+    match config {
+        Some(cfg) => {
+            match cfg.validate() {
+                Ok(()) => {
+                    println!("config OK");
+                }
+                Err(errors) => {
+                    for err in &errors {
+                        println!("  error: {}", err);
+                    }
+                    return Err(format!("config has {} error(s)", errors.len()));
+                }
+            }
+        }
+        None => {
+            println!("No config file found. Using defaults — no validation needed.");
+        }
     }
     Ok(())
 }

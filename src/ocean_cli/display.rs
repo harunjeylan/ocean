@@ -9,7 +9,7 @@ pub fn print_graph_subgraph(subgraph: &Subgraph) {
     println!("  Edges: {}", subgraph.edges.len());
     for node in &subgraph.nodes {
         let label = node.label.as_deref().unwrap_or("-");
-        println!("  [{}] {}  label=\"{}\"", format!("{:?}", node.node_type), node.id, label);
+        println!("  [{:?}] {}  label=\"{}\"", node.node_type, node.id, label);
     }
     for edge in &subgraph.edges {
         println!("  {} --({:?}, w={})--> {}", edge.from, edge.relation, edge.weight, edge.to);
@@ -18,7 +18,7 @@ pub fn print_graph_subgraph(subgraph: &Subgraph) {
 
 pub fn print_graph_node(node: &Node) {
     let label = node.label.as_deref().unwrap_or("-");
-    println!("  [{}] {}  label=\"{}\"", format!("{:?}", node.node_type), node.id, label);
+    println!("  [{:?}] {}  label=\"{}\"", node.node_type, node.id, label);
 }
 
 pub fn print_graph_info(node_count: u64, edge_count: u64, type_breakdown: Vec<(NodeType, usize)>) {
@@ -64,7 +64,7 @@ pub fn print_graph_expanded(subgraph: &Subgraph) {
     println!();
     for node in &subgraph.nodes {
         let label = node.label.as_deref().unwrap_or("-");
-        println!("  [{}] {}  \"{}\"", format!("{:?}", node.node_type), node.id, label);
+        println!("  [{:?}] {}  \"{}\"", node.node_type, node.id, label);
     }
     println!();
     println!("Edges:");

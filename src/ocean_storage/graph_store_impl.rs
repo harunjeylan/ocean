@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use surrealdb::engine::local::{Db, Mem, SurrealKv};
+use surrealdb::engine::local::{Db, Mem};
 use surrealdb::Surreal;
 use surrealdb::types::SurrealValue;
 use tokio::runtime::Runtime;
@@ -44,7 +44,7 @@ impl SurrealGraphStore {
             .map_err(|e| StorageError::ConnectionFailed("GraphStore".into(), e.to_string()))?;
         let db = rt
             .block_on(async {
-                let db = Surreal::new::<SurrealKv>(&path).await
+                let db = crate::ocean_storage::connect_surrealkv(&path).await
                     .map_err(|e| StorageError::ConnectionFailed("GraphStore".into(), e.to_string()))?;
                 db.use_ns("ocean").use_db("ocean").await
                     .map_err(|e| StorageError::ConnectionFailed("GraphStore".into(), e.to_string()))?;
@@ -58,7 +58,7 @@ impl SurrealGraphStore {
             .map_err(|e| StorageError::ConnectionFailed("GraphStore".into(), e.to_string()))?;
         let db = rt
             .block_on(async {
-                let db = Surreal::new::<SurrealKv>(path).await
+                let db = crate::ocean_storage::connect_surrealkv(path).await
                     .map_err(|e| StorageError::ConnectionFailed("GraphStore".into(), e.to_string()))?;
                 db.use_ns("ocean").use_db("ocean").await
                     .map_err(|e| StorageError::ConnectionFailed("GraphStore".into(), e.to_string()))?;

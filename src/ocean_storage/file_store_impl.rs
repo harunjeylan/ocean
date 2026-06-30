@@ -1,4 +1,4 @@
-use surrealdb::engine::local::{Db, Mem, SurrealKv};
+use surrealdb::engine::local::{Db, Mem};
 use surrealdb::Surreal;
 use tokio::runtime::Runtime;
 
@@ -18,7 +18,7 @@ impl SurrealFileStore {
             .map_err(|e| StorageError::ConnectionFailed("FileStore".into(), e.to_string()))?;
         let db = rt
             .block_on(async {
-                let db = Surreal::new::<SurrealKv>(&path).await
+                let db = crate::ocean_storage::connect_surrealkv(&path).await
                     .map_err(|e| StorageError::ConnectionFailed("FileStore".into(), e.to_string()))?;
                 db.use_ns("ocean").use_db("ocean").await
                     .map_err(|e| StorageError::ConnectionFailed("FileStore".into(), e.to_string()))?;

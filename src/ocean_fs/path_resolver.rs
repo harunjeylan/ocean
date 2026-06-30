@@ -1,5 +1,5 @@
 use crate::ocean_fs::types::PathMove;
-use surrealdb::engine::local::{Db, Mem, SurrealKv};
+use surrealdb::engine::local::{Db, Mem};
 use surrealdb::Surreal;
 use tokio::runtime::Runtime;
 
@@ -35,7 +35,7 @@ impl PathResolver {
     pub fn new(db_path: &str) -> Result<Self, ResolverError> {
         let rt = Runtime::new().map_err(|e| ResolverError::IoError(e.to_string()))?;
         let db = rt.block_on(async {
-            let db = Surreal::new::<SurrealKv>(db_path).await?;
+            let db = crate::ocean_storage::connect_surrealkv(db_path).await?;
             db.use_ns("ocean").use_db("ocean").await?;
             Ok::<_, surrealdb::Error>(db)
         })?;

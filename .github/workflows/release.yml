@@ -49,7 +49,7 @@ jobs:
         shell: pwsh
 
       - name: Upload Release Asset
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: |
             ocean-${{ github.ref_name }}-${{ matrix.target }}.${{ matrix.archive-suffix }}
@@ -60,7 +60,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - name: Upload install scripts
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: |
             install.ps1

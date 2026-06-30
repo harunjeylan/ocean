@@ -8,6 +8,7 @@ pub mod events;
 pub mod metrics;
 pub mod sandbox;
 pub mod init;
+pub mod mcp_setup;
 
 pub use args::*;
 pub use config::*;

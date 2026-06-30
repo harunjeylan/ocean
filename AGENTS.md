@@ -49,13 +49,13 @@
 ## Module: ocean_cli (CLI)
 
 ### Files
-- `args.rs` — `Cli` struct, `Commands` enum (12 commands), `ReadArgs` + `ChunkArgs` structs
+- `args.rs` — `Cli` struct, `Commands` enum (19 commands), `ReadArgs` + `ChunkArgs` structs
 - `display.rs` — `print_meta()`, `print_outline()`, `print_read_result()` — all output formatting
 - `walk.rs` — `walk_supported_files()`, `SUPPORTED_EXTS` constant
 - `run.rs` — `run()` dispatch + `cmd_*` handler functions
 - `mod.rs` — re-exports
 
-### 13 CLI commands
+### 19 CLI commands
 - `info <file>` — metadata + outline in one view
 - `metadata <file>` — all metadata fields
 - `outline <file>` — hierarchical table of contents
@@ -71,6 +71,10 @@
 - `index <dir> [--model] [--provider] [--ollama-url] [--openai-key] [--anthropic-key] [--gemini-key] [--db-path] [--batch-size] [--reindex]` — scan, parse, chunk, embed, and store in SurrealDB
 - `query <query> [--mode] [--top-k] [--context] [--context-chunks] [--expand-depth] [--rerank-by-heading] [--rerank-by-file] [--file-id] [--heading] [--block-type] [--model] [--provider] [--ollama-url] [--openai-key] [--anthropic-key] [--gemini-key] [--db-path] [--verbose]` — unified query with auto/vector/hybrid/expand modes, context windows, and execution metadata
 - `vector-search <query> [--top-k] [--hybrid] [--file-id] [--heading] [--block-type] [--model] [--provider] [--ollama-url] [--openai-key] [--anthropic-key] [--gemini-key] [--db-path]` — semantic vector search over indexed documents (unchanged)
+- `vector status [--db-path] [--provider] [--model] [--api-key] [--ollama-url]` — check vector DB health, indexed chunks, embedder connectivity
+- `graph status [--db-path]` — check graph DB health, node/edge counts
+- `vector status [--db-path] [--provider] [--model] [--api-key] [--ollama-url]` — check vector DB health, indexed chunks, embedder connectivity
+- `graph status [--db-path]` — check graph DB health, node/edge counts
 
 ### Skip/take slicing
 - `--skip <N>` — skip N units from start (pages for PDF/DOCX, slides for PPTX, lines for TXT/MD, paragraphs for HTML, sheets for XLSX)
@@ -129,8 +133,9 @@ cargo test --test parser_real_files    # real file acceptance test
 cargo test --lib <test_name>       # specific test (cargo test --lib path_resolver)
 cargo build                        # debug
 cargo build --release              # release
-cargo run --bin ocean -- <args>    # run CLI (default binary)
-cargo run --bin cli -- <args>      # run explicit CLI binary
+cargo run --bin ocean -- <args>         # run CLI (default binary)
+cargo run --bin ocean_cli -- <args>     # run explicit CLI binary
+cargo run --bin ocean_mcp -- <args>     # run MCP server (stdio transport)
 ```
 
 ## Patterns & conventions
@@ -160,6 +165,80 @@ cargo run --bin cli -- <args>      # run explicit CLI binary
 - `quick-xml 0.31`: use `reader.trim_text(true)`, `attr.value` (not `attr.unescape_value()`).
 - `calamine 0.24`: use `Data` enum (not `DataType` — it's a trait).
 - `lopdf 0.32`: `Object::as_str()` returns `&[u8]`; trailer info via `trailer.get(b"Info")`.
+
+## AI Agent Guidance
+
+### Two modes of operation
+Commands fall into two tiers based on whether they need external services:
+
+**Tier 1 — Local FS commands (always work, no setup required):**
+Use these by default when answering user questions about documents.
+- `ocean info <file>` / `ocean metadata <file>` — document summary
+- `ocean outline <file>` — table of contents / structure
+- `ocean search <file> <query>` — full-text search in a single file
+- `ocean grep <dir> <query>` — full-text search across all supported files
+- `ocean read <file> [--page|--heading|--slide|--skip/--take]` — read by selector
+- `ocean scan <dir>` — list supported files
+- `ocean chunk <file>` — semantic chunking
+- `ocean config show|validate` — view/validate configuration
+- `ocean init` — interactive project setup
+
+**Tier 2 — Indexed commands (require `ocean index .` + working embedder):**
+Only use these after confirming health via `ocean vector status`.
+- `ocean index <dir>` — parse, chunk, embed, store in SurrealDB
+- `ocean query <query>` — semantic search over indexed documents
+- `ocean vector-search <query>` — vector search (deprecated, use `query`)
+- `ocean graph info|expand|path|stats|status` — knowledge graph queries
+
+### Default tool recommendation
+**Always prefer Tier 1 commands first.** They are instant, need no configuration, and work on any supported file format. Specifically:
+- For document content: `ocean read <file> --skip 0 --take 20` or `ocean read <file> --page 1`
+- For finding information: `ocean search <file> "query"` or `ocean grep <dir> "query"`
+- For document structure: `ocean info <file>` or `ocean outline <file>`
+- For listing available files: `ocean scan <dir>`
+
+### When to use Tier 2 (indexed/vector/graph) commands
+Only use these when:
+1. The user explicitly asks for semantic search, vector query, or graph operations
+2. You've checked `ocean vector status` and confirmed:
+   - "Accessible: Yes"
+   - "Schema: Initialized"
+   - "Indexed chunks: > 0"
+   - "Connection: OK"
+3. For graph queries, also check `ocean graph status` confirms nodes exist
+
+### How to check status
+- `ocean vector status` — tests the full chain: DB access, schema, chunk count, embedder config, live embedder connection
+- `ocean graph status` — tests DB access, schema, node/edge counts by type
+
+If vector status shows "FAILED" or "Skipped", the embedder is not reachable/configured. Fall back to Tier 1 commands. The user needs to install Ollama, set API keys, or run `ocean init` to configure a provider.
+
+### Interpreting `ocean vector status` output
+```
+Vector Status
+  Database: ~/.ocean/database/my-project/vectors.db
+  Accessible: Yes              ← DB opened successfully
+  Schema: Initialized           ← chunk table exists (indexing has run before)
+  Indexed chunks: 42            ← documents have been indexed
+  Embedder: ollama / nomic-embed-text (dim=768)  ← configured provider/model
+  Connection: OK (12ms)         ← embedder responds
+```
+- "Accessible: No" → run `ocean index .` to create the DB
+- "Schema: Not initialized" → run `ocean index .` to create tables
+- "Indexed chunks: 0" → no documents indexed yet
+- "Connection: FAILED" → embedder unreachable (Ollama not running, wrong API key)
+- "API key: Not set" → provider needs an API key (use `ocean init` or set in config)
+
+### When to use specific commands for code assistance
+| Situation | Recommended command | Why |
+|-----------|-------------------|-----|
+| Need file content | `ocean read file.txt --take 30` | Returns raw text, no setup |
+| Find specific info | `ocean search report.pdf "keyword"` | Case-insensitive, reports context |
+| Browse all docs | `ocean scan .` then `ocean info each` | Lists + summarizes files |
+| Search across docs | `ocean grep ./docs "phrase"` | Recursive, all formats |
+| Understand structure | `ocean outline chapter.md` | Shows heading hierarchy |
+| Need to chunk/search semantically | Check `ocean vector status` first | Requires index + embedder |
+| Graph queries | Check `ocean graph status` first | Requires indexed graph |
 
 ## Specs & design
 - `.specs/ocean-fs/` — Phase 1 requirements (R1–R9), design, tasks.

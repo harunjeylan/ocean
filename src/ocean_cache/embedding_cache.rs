@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::sync::Mutex;
 
-use surrealdb::engine::local::{Db, SurrealKv};
+use surrealdb::engine::local::Db;
 use surrealdb::Surreal;
 use tokio::runtime::Runtime;
 
@@ -17,7 +17,7 @@ impl L2Store {
         let rt = Runtime::new().ok()?;
         let db = rt
             .block_on(async {
-                let db = Surreal::new::<SurrealKv>(path).await.ok()?;
+                let db = crate::ocean_storage::connect_surrealkv(path).await.ok()?;
                 db.use_ns("ocean").use_db("ocean_cache").await.ok()?;
                 db.query(
                     "CREATE TABLE IF NOT EXISTS embedding_cache (

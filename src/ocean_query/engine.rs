@@ -161,6 +161,39 @@ impl QueryEngine {
         })
     }
 
+    pub fn new_persistent(config: &StorageConfig, dimension: usize) -> Result<Self, QueryError> {
+        let vstore_impl = SurrealVectorStore::new_persistent(config)
+            .map_err(|e| QueryError::VectorSearchFailed(e.to_string()))?;
+        vstore_impl.initialize_schema(dimension)
+            .map_err(|e| QueryError::VectorSearchFailed(e.to_string()))?;
+        let vstore: Arc<dyn VectorStore> = Arc::new(vstore_impl);
+
+        let cstore: Arc<dyn ChunkStore> = Arc::new(
+            SurrealChunkStore::new_persistent(config)
+                .map_err(|e| QueryError::VectorSearchFailed(e.to_string()))?,
+        );
+
+        let graph = match SurrealGraphStore::new_persistent(config) {
+            Ok(gs) => {
+                let _ = gs.initialize_schema();
+                Some(ExpansionEngine::new(Arc::new(gs) as Arc<dyn GraphStore>))
+            }
+            Err(_) => None,
+        };
+
+        let search = SearchEngine::new(vstore.clone());
+
+        Ok(Self {
+            store: vstore,
+            chunk_store: cstore,
+            search,
+            graph,
+            embed_cache: None,
+            query_cache: None,
+            no_cache: false,
+        })
+    }
+
     pub fn new(db_path: &str) -> Result<Self, QueryError> {
         Self::new_with_dimension(db_path, 768)
     }

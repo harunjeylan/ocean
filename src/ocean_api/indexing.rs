@@ -16,6 +16,8 @@ use crate::ocean_storage::graph_store::GraphStore;
 use crate::ocean_storage::vector_store::VectorStore;
 use crate::ocean_storage::{SurrealChunkStore, SurrealGraphStore, SurrealStateStore, SurrealVectorStore};
 
+
+
 use super::embedding::{api_key, create_embedder, EmbeddingConfig};
 use super::types::{ApiError, IndexRequest, IndexResult};
 
@@ -37,23 +39,24 @@ pub fn index_directory(request: IndexRequest) -> Result<IndexResult, ApiError> {
     let provider = EmbeddingConfig::resolve_provider(request.provider.as_deref(), None);
     let model = EmbeddingConfig::resolve_model(request.model.as_deref(), None);
 
-    let vector_path = format!("{}/vector.db", request.db_path.as_deref().unwrap_or(""));
-    let graph_path = format!("{}/graph.db", request.db_path.as_deref().unwrap_or(""));
+    let base_path = request.db_path.as_deref().unwrap_or("");
+    let config = StorageConfig::new(base_path);
+    config.ensure_dirs().map_err(|e| {
+        ApiError::IndexError(format!("Failed to create store directories: {}", e))
+    })?;
 
-    let vconfig = StorageConfig::new(&vector_path);
-    let vstore = SurrealVectorStore::new_persistent_at(&vector_path, &vconfig)
+    let vstore = SurrealVectorStore::new_persistent(&config)
         .map_err(|e| ApiError::IndexError(format!("Failed to open store: {}", e)))?;
 
     let dim = EmbeddingConfig::resolve_dimension(request.dimension, None, &provider, &model);
     vstore.initialize_schema(dim)
         .map_err(|e| ApiError::IndexError(format!("Failed to init schema: {}", e)))?;
 
-    let cstore = SurrealChunkStore::new_persistent_at(&vector_path)
+    let cstore = SurrealChunkStore::new_persistent(&config)
         .map_err(|e| ApiError::IndexError(format!("Failed to open chunk store: {}", e)))?;
 
     let graph_store: Option<SurrealGraphStore> = if !request.no_graph {
-        let gconfig = StorageConfig::new(&graph_path);
-        let gs = SurrealGraphStore::new_persistent_at(&graph_path, &gconfig)
+        let gs = SurrealGraphStore::new_persistent(&config)
             .map_err(|e| ApiError::IndexError(format!("Failed to open graph store: {}", e)))?;
         gs.initialize_schema()
             .map_err(|e| ApiError::IndexError(format!("Failed to init graph schema: {}", e)))?;
@@ -62,7 +65,7 @@ pub fn index_directory(request: IndexRequest) -> Result<IndexResult, ApiError> {
         None
     };
 
-    let state_store = SurrealStateStore::new_persistent(&StorageConfig::new(request.db_path.as_deref().unwrap_or("")))
+    let state_store = SurrealStateStore::new_persistent(&config)
         .map_err(|e| ApiError::IndexError(format!("Failed to open state store: {}", e)))?;
 
     let resolved_key = api_key(request.api_key.as_deref(), None, None);

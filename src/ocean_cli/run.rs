@@ -13,14 +13,31 @@ use crate::ocean_api::types::*;
 use crate::ocean_chunk::ChunkConfig;
 use crate::ocean_cli::args::{
     ChunkArgs, Cli, Commands, ConfigArgs, ConfigCommands, GraphArgs, GraphCommands, IndexArgs, QueryArgs, ReadArgs,
-    VectorSearchArgs,
+    VectorArgs, VectorCommands, VectorSearchArgs,
 };
 use crate::ocean_cli::config::OceanConfig;
+
+// TODO(v2.0): remove this function and all experimentals guards when vector/graph graduate to stable
+fn check_experimental(config: &Option<OceanConfig>, section: &str, cmd: &str) -> Result<(), String> {
+    let enabled = match section {
+        "vector" => config.as_ref().and_then(|c| c.experimentals.vector).unwrap_or(false),
+        "graph" => config.as_ref().and_then(|c| c.experimentals.graph).unwrap_or(false),
+        _ => false,
+    };
+    if !enabled {
+        return Err(format!(
+            "The '{}' command is experimental. Enable it by setting \"experimentals\": {{ \"{}\": true }} in .ocean/config.json",
+            cmd, section
+        ));
+    }
+    Ok(())
+}
 use crate::ocean_cli::display::*;
 use crate::ocean_cli::events::{global_emitter, set_global_emitter, ConsoleEmitter, JsonEmitter, MultiEmitter, OutputTarget, SystemEvent};
 use crate::ocean_storage::readonly::ReadOnlyGuard;
 use crate::ocean_cli::metrics::{global_metrics, print_metrics};
 use crate::ocean_cli::init::cmd_init;
+use crate::ocean_cli::mcp_setup::cmd_mcp_setup;
 use crate::ocean_cli::runtime::RuntimeMode;
 use crate::ocean_fs::*;
 use crate::ocean_parser::*;
@@ -35,8 +52,14 @@ pub fn run() -> Result<(), String> {
     ReadOnlyGuard::set_global_enabled(read_only);
 
     match cli.command {
-        Commands::Index(ref args) => return cmd_index(args.clone(), &cli, &config),
-        Commands::Query(ref args) => return cmd_query(args.clone(), &cli, &config),
+        Commands::Index(ref args) => {
+            check_experimental(&config, "vector", "index")?; // TODO(v2.0): remove — graduates with vector
+            return cmd_index(args.clone(), &cli, &config);
+        }
+        Commands::Query(ref args) => {
+            check_experimental(&config, "vector", "query")?; // TODO(v2.0): remove — graduates with vector
+            return cmd_query(args.clone(), &cli, &config);
+        }
         _ => {}
     }
 
@@ -70,20 +93,37 @@ pub fn run() -> Result<(), String> {
             cmd_scan(dir, no_hash)
         }
         Commands::Hash { file } => cmd_hash(file),
-        Commands::Verify { file, hash } => cmd_verify(file, hash),
+        Commands::Verify { file, hash } => {
+            check_experimental(&config, "vector", "verify")?; // TODO(v2.0): remove — graduates with vector
+            cmd_verify(file, hash)
+        }
         Commands::Watch { dir, no_sandbox } => {
             if read_only {
                 return Err("watch is disabled in read-only mode".to_string());
             }
             cmd_watch(dir, no_sandbox)
         }
-        Commands::Chunk(args) => cmd_chunk(args),
+        Commands::Chunk(args) => {
+            check_experimental(&config, "vector", "chunk")?; // TODO(v2.0): remove — graduates with vector
+            cmd_chunk(args)
+        }
         Commands::Index(_) => unreachable!(),
         Commands::Query(_) => unreachable!(),
-        Commands::VectorSearch(args) => cmd_vector_search(args, &config),
-        Commands::Graph(args) => cmd_graph(args),
+        Commands::VectorSearch(args) => {
+            check_experimental(&config, "vector", "vector-search")?; // TODO(v2.0): remove — graduates with vector
+            cmd_vector_search(args, &config)
+        }
+        Commands::Vector(args) => {
+            check_experimental(&config, "vector", "vector")?; // TODO(v2.0): remove — graduates with vector
+            cmd_vector(args)
+        }
+        Commands::Graph(args) => {
+            check_experimental(&config, "graph", "graph")?; // TODO(v2.0): remove — graduates with graph
+            cmd_graph(args)
+        }
         Commands::Config(args) => cmd_config(args, &config),
         Commands::Init(args) => cmd_init(args.dir),
+        Commands::McpSetup(args) => cmd_mcp_setup(args.agent, args.write),
     }
 }
 
@@ -664,6 +704,17 @@ fn cmd_graph(args: GraphArgs) -> Result<(), String> {
         GraphCommands::Stats { db_path } => {
             cmd_graph_stats(resolve(db_path))
         }
+        GraphCommands::Status { db_path } => {
+            cmd_graph_status(resolve(db_path))
+        }
+    }
+}
+
+fn cmd_vector(args: VectorArgs) -> Result<(), String> {
+    match args.command {
+        VectorCommands::Status { db_path, provider, model, api_key, ollama_url } => {
+            cmd_vector_status(db_path, provider, model, api_key, ollama_url)
+        }
     }
 }
 
@@ -761,5 +812,149 @@ fn cmd_graph_stats(db_path: String) -> Result<(), String> {
         ("Folder".to_string(), store.get_nodes_by_type(NodeType::Folder).map(|v| v.len() as u64).unwrap_or(0)),
     ];
     print_graph_stats(total_nodes, total_edges, type_counts);
+    Ok(())
+}
+
+fn cmd_graph_status(db_path: String) -> Result<(), String> {
+    use std::sync::Arc;
+    use crate::ocean_storage::config::StorageConfig;
+    use crate::ocean_storage::graph_store::{GraphStore, NodeType};
+    use crate::ocean_storage::SurrealGraphStore;
+
+    let config = StorageConfig::new(&db_path);
+
+    let store = match SurrealGraphStore::new_persistent_at(&db_path, &config) {
+        Ok(s) => s,
+        Err(e) => {
+            print_graph_status(&db_path, false, false, 0, 0, vec![]);
+            return Err(format!("Failed to open graph store: {}", e));
+        }
+    };
+
+    let schema_ok = store.initialize_schema().is_ok();
+    let store: Arc<dyn GraphStore> = Arc::new(store);
+
+    let (total_nodes, total_edges) = if schema_ok {
+        (store.count_nodes().unwrap_or(0), store.count_edges().unwrap_or(0))
+    } else {
+        (0, 0)
+    };
+
+    let type_counts = if total_nodes > 0 {
+        vec![
+            ("File".to_string(), store.get_nodes_by_type(NodeType::File).map(|v| v.len() as u64).unwrap_or(0)),
+            ("Chunk".to_string(), store.get_nodes_by_type(NodeType::Chunk).map(|v| v.len() as u64).unwrap_or(0)),
+            ("Heading".to_string(), store.get_nodes_by_type(NodeType::Heading).map(|v| v.len() as u64).unwrap_or(0)),
+            ("Entity".to_string(), store.get_nodes_by_type(NodeType::Entity).map(|v| v.len() as u64).unwrap_or(0)),
+            ("Folder".to_string(), store.get_nodes_by_type(NodeType::Folder).map(|v| v.len() as u64).unwrap_or(0)),
+        ]
+    } else {
+        vec![]
+    };
+
+    print_graph_status(&db_path, true, schema_ok, total_nodes, total_edges, type_counts);
+    Ok(())
+}
+
+fn cmd_vector_status(
+    db_path: Option<String>,
+    cli_provider: Option<String>,
+    cli_model: Option<String>,
+    cli_api_key: Option<String>,
+    cli_ollama_url: Option<String>,
+) -> Result<(), String> {
+    use std::time::Instant;
+    use crate::ocean_storage::config::StorageConfig;
+    use crate::ocean_storage::vector_store::VectorStore;
+    use crate::ocean_storage::SurrealVectorStore;
+    use crate::ocean_api::embedding::{create_embedder, EmbeddingConfig};
+    use crate::ocean_cli::config::OceanConfig;
+
+    let config = OceanConfig::load();
+    let base_path = crate::ocean_cli::config::resolve_db_path(
+        db_path.as_deref(),
+        config.as_ref().and_then(|c| c.index.db_path.as_deref()),
+    );
+    let vector_db = crate::ocean_cli::config::resolve_vector_db_path(
+        Some(&base_path),
+        None,
+    );
+
+    let provider = EmbeddingConfig::resolve_provider(
+        cli_provider.as_deref(),
+        config.as_ref().and_then(|c| c.embedding.provider.as_deref()),
+    );
+    let model = EmbeddingConfig::resolve_model(
+        cli_model.as_deref(),
+        config.as_ref().and_then(|c| c.embedding.model.as_deref()),
+    );
+    let dimension = EmbeddingConfig::resolve_dimension(
+        None,
+        config.as_ref().and_then(|c| c.embedding.dimension),
+        &provider,
+        &model,
+    );
+    let resolved_key = crate::ocean_cli::config::resolve_api_key(
+        cli_api_key.as_deref(),
+        config.as_ref().and_then(|c| c.embedding.api_key.as_deref()),
+        None,
+    );
+    let base_url = crate::ocean_cli::config::resolve_base_url(
+        &provider,
+        cli_ollama_url.as_deref(),
+        config.as_ref().and_then(|c| c.embedding.base_url.as_deref()),
+    );
+
+    let st_config = StorageConfig::new(&base_path);
+
+    let store = match SurrealVectorStore::new_persistent(&st_config) {
+        Ok(s) => s,
+        Err(e) => {
+            print_vector_status(
+                &vector_db, false, false, 0,
+                &provider, &model, dimension,
+                resolved_key.is_some(),
+                matches!(provider.as_str(), "openai" | "anthropic" | "gemini"),
+                Some("FAILED (open error)".to_string()), None,
+            );
+            return Err(format!("Failed to open vector store: {}", e));
+        }
+    };
+
+    let schema_ok = store.initialize_schema(dimension).is_ok();
+    let chunk_count = if schema_ok { store.count().unwrap_or(0) } else { 0 };
+
+    let api_key_required = matches!(provider.as_str(), "openai" | "anthropic" | "gemini");
+    let api_key_set = resolved_key.is_some();
+
+    let (connection_result, connection_ms): (Option<String>, Option<u64>) =
+        if api_key_required && !api_key_set {
+            (Some("Skipped (API key not set)".to_string()), None)
+        } else {
+            match create_embedder(&provider, &model, &base_url, resolved_key.as_deref()) {
+                Ok(embedder) => {
+                    let start = Instant::now();
+                    match embedder.embed("status check") {
+                        Ok(_) => {
+                            let ms = start.elapsed().as_millis() as u64;
+                            (Some(format!("OK")), Some(ms))
+                        }
+                        Err(e) => {
+                            (Some(format!("FAILED: {}", e)), None)
+                        }
+                    }
+                }
+                Err(e) => {
+                    (Some(format!("Skipped: {}", e)), None)
+                }
+            }
+        };
+
+    print_vector_status(
+        &vector_db, true, schema_ok, chunk_count,
+        &provider, &model, dimension,
+        api_key_set, api_key_required,
+        connection_result, connection_ms,
+    );
     Ok(())
 }

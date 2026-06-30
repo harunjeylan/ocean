@@ -92,7 +92,7 @@ fn test_write_config_creates_file() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().to_path_buf();
 
-    write_config(&path, "ollama", "nomic-embed-text", 768, &None, "http://localhost:11434").unwrap();
+    write_config(&path, "ollama", "nomic-embed-text", 768, &None, "http://localhost:11434", false, false).unwrap();
 
     let config_path = path.join(".ocean").join("config.json");
     assert!(config_path.exists());
@@ -107,7 +107,7 @@ fn test_write_config_with_api_key() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().to_path_buf();
 
-    write_config(&path, "openai", "text-embedding-3-small", 1536, &Some("sk-test".to_string()), "https://api.openai.com/v1").unwrap();
+    write_config(&path, "openai", "text-embedding-3-small", 1536, &Some("sk-test".to_string()), "https://api.openai.com/v1", false, false).unwrap();
 
     let config_path = path.join(".ocean").join("config.json");
     assert!(config_path.exists());
@@ -146,7 +146,7 @@ fn test_ensure_agents_md_appends() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().to_path_buf();
 
-    ensure_agents_md(&path).unwrap();
+    ensure_agents_md(&path, false, false).unwrap();
 
     let agents_path = path.join("AGENTS.md");
     assert!(agents_path.exists());
@@ -159,8 +159,8 @@ fn test_ensure_agents_md_idempotent() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().to_path_buf();
 
-    ensure_agents_md(&path).unwrap();
-    ensure_agents_md(&path).unwrap();
+    ensure_agents_md(&path, false, false).unwrap();
+    ensure_agents_md(&path, false, false).unwrap();
 
     let content = std::fs::read_to_string(&path.join("AGENTS.md")).unwrap();
     let count = content.matches("## Ocean CLI Usage").count();
@@ -172,7 +172,7 @@ fn test_ensure_ocean_cli_skill_creates() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().to_path_buf();
 
-    ensure_ocean_cli_skill(&path).unwrap();
+    ensure_ocean_cli_skill(&path, false, false).unwrap();
 
     let skill_path = path.join(".agents").join("skills").join("ocean-cli").join("SKILL.md");
     assert!(skill_path.exists());
@@ -185,8 +185,8 @@ fn test_ensure_ocean_cli_skill_idempotent() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().to_path_buf();
 
-    ensure_ocean_cli_skill(&path).unwrap();
-    ensure_ocean_cli_skill(&path).unwrap();
+    ensure_ocean_cli_skill(&path, false, false).unwrap();
+    ensure_ocean_cli_skill(&path, false, false).unwrap();
 
     let skill_path = path.join(".agents").join("skills").join("ocean-cli").join("SKILL.md");
     assert!(skill_path.exists());
@@ -206,10 +206,10 @@ fn test_cmd_init_valid_dir_no_interactive() {
     std::fs::write(path.join("CLAUDE.md"), "# Existing\n").unwrap();
     std::fs::write(path.join("AGENTS.md"), "# Existing\n").unwrap();
 
-    write_config(&path, "ollama", "nomic-embed-text", 768, &None, "http://localhost:11434").unwrap();
+    write_config(&path, "ollama", "nomic-embed-text", 768, &None, "http://localhost:11434", false, false).unwrap();
     ensure_claude_md(&path).unwrap();
-    ensure_agents_md(&path).unwrap();
-    ensure_ocean_cli_skill(&path).unwrap();
+    ensure_agents_md(&path, false, false).unwrap();
+    ensure_ocean_cli_skill(&path, false, false).unwrap();
 
     assert!(path.join(".ocean").join("config.json").exists());
     assert!(path.join("CLAUDE.md").exists());

@@ -83,6 +83,13 @@ pub struct RuntimeConfigOpt {
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(default)]
+pub struct ExperimentalsConfig {
+    pub vector: Option<bool>,
+    pub graph: Option<bool>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(default)]
 pub struct SecurityConfigOpt {
     pub sandbox: Option<bool>,
     pub read_only: Option<bool>,
@@ -105,6 +112,7 @@ pub struct OceanConfig {
     pub cache: CacheConfigOpt,
     pub security: SecurityConfigOpt,
     pub observability: ObservabilityConfigOpt,
+    pub experimentals: ExperimentalsConfig,
 }
 
 impl OceanConfig {
@@ -238,6 +246,8 @@ fn merge_config(base: &mut OceanConfig, partial: OceanConfig) {
     merge_opt!(base.security.read_only, partial.security.read_only);
     merge_opt!(base.observability.log_format, partial.observability.log_format);
     merge_opt!(base.observability.log_file, partial.observability.log_file);
+    merge_opt!(base.experimentals.vector, partial.experimentals.vector);
+    merge_opt!(base.experimentals.graph, partial.experimentals.graph);
 }
 
 pub fn resolve_api_key(cli_key: Option<&str>, config_key: Option<&str>, env_var: Option<&str>) -> Option<String> {

@@ -362,6 +362,37 @@ ocean chunk data.xlsx --rows-per-chunk 100
 
 ---
 
+## Vector Status Command
+
+### vector status — Check vector store health
+
+Check the vector store database health, schema state, indexed chunk count, embedder configuration, and live embedder connectivity.
+
+```
+ocean vector status [--db-path <path>] [--provider <name>] [--model <name>] [--api-key <key>] [--ollama-url <url>]
+```
+
+**Options:**
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--db-path` | auto (`~/.ocean/database/{cwd}.db`) | SurrealDB database base path |
+| `--provider` | config / `ollama` | Embedding provider override |
+| `--model` | config / `nomic-embed-text` | Embedding model override |
+| `--api-key` | config / env / — | API key override |
+| `--ollama-url` | config / `http://localhost:11434` | Ollama base URL override |
+
+```
+ocean vector status
+  Vector Status
+    Database: C:\Users\user\.ocean\database\my-project\vectors.db
+    Accessible: Yes
+    Schema: Initialized
+    Indexed chunks: 42
+    Embedder: ollama / nomic-embed-text (dim=768)
+    Connection: OK (12ms)
+```
+
 ## Graph Commands
 
 ### graph info — Show graph info for a file
@@ -436,6 +467,36 @@ ocean graph path <from-id> <to-id> [--max-depth <N>] [--db-path <path>]
 ocean graph path chunk:c1 heading:h1
   Path (2 hops):
     1. chunk:c1 --BelongsTo--> heading:h1 (w: 1.0)
+```
+
+### graph status — Check graph store health
+
+Check the graph store database health, schema state, and node/edge counts with type breakdown.
+
+```
+ocean graph status [--db-path <path>]
+```
+
+**Options:**
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--db-path` | auto | Path to SurrealDB database |
+
+```
+ocean graph status
+  Graph Status
+    Database: C:\Users\user\.ocean\database\my-project\graph.db
+    Accessible: Yes
+    Schema: Initialized
+    Nodes: 150
+    Edges: 320
+    By type:
+      File: 10
+      Chunk: 100
+      Heading: 40
+      Entity: 0
+      Folder: 0
 ```
 
 ### graph stats — Show global graph statistics

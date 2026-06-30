@@ -1,4 +1,5 @@
 pub mod config;
+pub mod connection;
 pub mod error;
 pub mod file_store;
 pub mod chunk_store;
@@ -7,6 +8,8 @@ pub mod graph_store;
 pub mod state_store;
 pub mod transaction;
 pub mod readonly;
+
+pub(crate) use connection::connect_surrealkv;
 
 mod file_store_impl;
 mod chunk_store_impl;

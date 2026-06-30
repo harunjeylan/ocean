@@ -489,9 +489,10 @@ impl Embedder for GeminiEmbedder {
         let resp = self
             .client
             .post(format!(
-                "https://generativelanguage.googleapis.com/v1/models/{}:embedContent?key={}",
-                self.model, self.api_key
+                "https://generativelanguage.googleapis.com/v1/models/{}:embedContent",
+                self.model,
             ))
+            .header("X-Goog-Api-Key", &self.api_key)
             .json(&serde_json::json!({
                 "model": format!("models/{}", self.model),
                 "content": {
@@ -564,10 +565,9 @@ impl Embedder for GeminiEmbedder {
 
         let resp = self
             .client
-            .post(format!(
-                "https://generativelanguage.googleapis.com/v1/models/{}:batchEmbedContents?key={}",
-                self.model, self.api_key
-            ))
+            .post("https://generativelanguage.googleapis.com/v1/models/{}:batchEmbedContents"
+                .replace("{}", &self.model))
+            .header("X-Goog-Api-Key", &self.api_key)
             .json(&body)
             .send()
             .map_err(|e| {

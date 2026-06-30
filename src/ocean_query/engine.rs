@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use crate::ocean_cache::{EmbeddingCache, QueryCache};
 use crate::ocean_graph::expansion::ExpansionEngine;
+use crate::ocean_graph::types::EdgeDirection;
 use crate::ocean_query::context::ContextWindowBuilder;
 use crate::ocean_query::error::QueryError;
 use crate::ocean_query::types::*;
@@ -22,8 +23,6 @@ enum SubQuery {
     GraphExpand { depth: usize },
     RerankByHeading,
     RerankByFile,
-    #[allow(dead_code)]
-    BuildContext { context_chunks: usize },
 }
 
 #[derive(Debug, Clone)]
@@ -61,6 +60,58 @@ pub fn select_mode(text: &str, expand_depth: usize) -> QueryMode {
     } else {
         QueryMode::Hybrid
     }
+}
+
+pub fn expand_results(
+    results: &[SearchResult],
+    expansion: &ExpansionEngine,
+    depth: usize,
+    store: &dyn VectorStore,
+) -> Vec<SearchResult> {
+    if depth == 0 {
+        return results.to_vec();
+    }
+
+    let mut expanded: Vec<SearchResult> = results.to_vec();
+    let mut seen_chunks: std::collections::HashSet<String> =
+        results.iter().map(|r| r.chunk_id.clone()).collect();
+
+    for result in results {
+        let chunk_node_id = format!("chunk:{}", result.chunk_id);
+        let subgraph = match expansion.expand(&chunk_node_id, depth, EdgeDirection::Both) {
+            Ok(sg) => sg,
+            Err(_) => continue,
+        };
+
+        for node in &subgraph.nodes {
+            let nt = format!("{:?}", node.node_type);
+            if nt != "Chunk" {
+                continue;
+            }
+            let chunk_id = node.ref_id.clone();
+            if seen_chunks.insert(chunk_id.clone()) {
+                if let Ok(Some(record)) = store.get_chunk(&chunk_id) {
+                    let combined_score =
+                        0.7 * result.score + 0.3 * (1.0 / (1.0 + 1.0));
+
+                    expanded.push(SearchResult {
+                        chunk_id,
+                        file_id: record.file_id,
+                        content: record.content,
+                        heading: record.heading,
+                        score: combined_score,
+                        block_type: record.block_type,
+                        vector_score: result.vector_score,
+                        fts_score: result.fts_score,
+                        graph_score: Some(combined_score),
+                    });
+                }
+            }
+        }
+    }
+
+    expanded.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+    expanded
 }
 
 pub struct QueryEngine {
@@ -247,12 +298,6 @@ impl QueryEngine {
         if query.rerank_by_file {
             steps.push(SubQuery::RerankByFile);
         }
-        if query.include_context {
-            steps.push(SubQuery::BuildContext {
-                context_chunks: query.context_chunks.max(1).min(10),
-            });
-        }
-
         ExecutionPlan { steps }
     }
 
@@ -391,10 +436,7 @@ impl QueryEngine {
                     };
 
                     final_results =
-                        match self.search.expand_results(&fused_results, expansion, *depth) {
-                            Ok(r) => r,
-                            Err(_) => fused_results.clone(),
-                        };
+                        expand_results(&fused_results, expansion, *depth, &*self.store);
                     graph_time = Some(t.elapsed().as_millis() as u64);
                 }
                 SubQuery::RerankByHeading => {
@@ -445,7 +487,6 @@ impl QueryEngine {
                     });
                     final_results = reranked;
                 }
-                SubQuery::BuildContext { context_chunks: _ } => {}
             }
         }
 

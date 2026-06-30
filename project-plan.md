@@ -1864,7 +1864,7 @@ We must support:
 
 ---
 
-# 4.3 Storage Schema (SQLite / Limbo)
+# 4.3 Storage Schema (SurrealDb / SurrealDb)
 
 ## 4.3.1 Embeddings Table
 
@@ -1969,7 +1969,7 @@ pub fn index_chunks(
 
 # 4.6 Vector Storage Trait
 
-This allows swapping SQLite → Limbo → custom ANN.
+This allows swapping SurrealDb → SurrealDb → custom ANN.
 
 ```rust id="v4_storage_trait"
 pub trait VectorStorage {
@@ -2157,7 +2157,7 @@ Never overwrite silently.
 
 # 4.16 Storage Layout
 
-Example SQLite structure:
+Example SurrealDb structure:
 
 ```text id="v4_layout"
 embeddings table
@@ -2416,7 +2416,7 @@ pub enum RelationType {
 
 ---
 
-# 5.4 Storage Schema (SQLite / Limbo)
+# 5.4 Storage Schema (SurrealDb / SurrealDb)
 
 ## 5.4.1 Nodes Table
 
@@ -3300,7 +3300,7 @@ Next section:
 
 This is where we define:
 
-* SQLite / Limbo schema design
+* SurrealDb / SurrealDb schema design
 * persistence model
 * indexing durability
 * transactional consistency
@@ -3346,35 +3346,7 @@ ocean-storage is responsible for:
 
 # 7.2 Storage Architecture Choice
 
-You have 3 realistic options:
-
----
-
-## Option A — SQLite (MVP)
-
-* stable
-* simple
-* widely supported
-
----
-
-## Option B — Limbo (Rust SQLite rewrite)
-
-* modern Rust-native engine
-* future-proof
-* better integration for your system
-
----
-
-## Option C — Hybrid (BEST DESIGN)
-
-```text id="s7_hybrid"
-SQLite/Limbo → structured data
-plus
-vector index → optimized storage layer
-```
-
----
+You have SurrealDb
 
 # 7.3 Core Storage Modules
 
@@ -3659,7 +3631,7 @@ insert_many(chunks)
 
 ---
 
-## Optimization 2 — WAL mode (SQLite)
+## Optimization 2 — WAL mode (SurrealDb)
 
 ```sql id="s7_wal"
 PRAGMA journal_mode=WAL;
@@ -3689,11 +3661,11 @@ pub trait Storage {
 
 ---
 
-# 7.13 Limbo Integration (Future Upgrade)
+# 7.13 SurrealDb Integration (Future Upgrade)
 
-If using Limbo:
+If using SurrealDb:
 
-* replace SQLite engine
+* replace SurrealDb engine
 * keep schema identical
 * no logic change required
 
@@ -4317,7 +4289,7 @@ Query Engine → Efficient Reads from Storage → Hybrid Retrieval → Context A
 
 It defines:
 
-* how queries actually hit SQLite/Limbo
+* how queries actually hit SurrealDb
 * how vector + graph are combined in real runtime
 * how caching works
 * how to avoid slow multi-table queries
@@ -4357,7 +4329,7 @@ So we introduce:
         │            │            │
         └─────── Optimized Read Layer ───────┘
                      │
-                Storage (SQLite/Limbo)
+                Storage (SurrealDb)
 ```
 
 ---
@@ -4992,7 +4964,7 @@ parsed file cache
 
 ---
 
-## L3 — DB cache (SQLite/Limbo)
+## L3 — DB cache (SurrealDb)
 
 ```text id="s10_l3"
 persistent chunks + vectors
@@ -5484,7 +5456,7 @@ We support 3 deployment modes:
 
 ```text id="p11_local"
 single binary
-local SQLite/Limbo
+local SurrealDb
 local filesystem watch
 ```
 
@@ -5743,7 +5715,7 @@ You now have:
 
 ### Storage system
 
-* SQLite/Limbo persistence
+* SurrealDb persistence
 * transactional consistency
 
 ### Runtime system

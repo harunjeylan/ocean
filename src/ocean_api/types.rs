@@ -146,9 +146,4 @@ pub struct VectorSearchRequest {
     pub db_path: Option<String>,
 }
 
-#[derive(Debug, Clone)]
-pub struct GraphRequest {
-    pub db_path: Option<String>,
-}
-
 pub type IndexResult = crate::ocean_index::IndexReport;

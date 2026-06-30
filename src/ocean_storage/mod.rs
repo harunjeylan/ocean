@@ -17,7 +17,7 @@ mod storage_impl;
 pub use config::StorageConfig;
 pub use error::StorageError;
 pub use file_store::{FileMeta, FileStore};
-pub use chunk_store::{ChunkRecord, ChunkStore};
+pub use chunk_store::{ChunkData, ChunkRecord, ChunkStore};
 pub use vector_store::VectorStore;
 pub use graph_store::{
     Edge, EdgeDirection, GraphStore, Node, NodeType, RelationType,

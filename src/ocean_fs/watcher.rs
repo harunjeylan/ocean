@@ -73,7 +73,10 @@ impl FileWatcher {
             return Err(WatchError::InvalidPath(format!("{} is not a directory", path)));
         }
 
-        let mut inner = self.inner.lock().unwrap();
+        let mut inner = self.inner.lock().unwrap_or_else(|e| {
+            eprintln!("Mutex was poisoned in FileWatcher::watch, recovering: {}", e);
+            e.into_inner()
+        });
         if inner.handle.is_some() {
             return Err(WatchError::AlreadyWatching);
         }
@@ -143,7 +146,10 @@ impl FileWatcher {
     }
 
     pub fn unwatch(&self, _handle: WatchHandle) -> Result<(), WatchError> {
-        let mut inner = self.inner.lock().unwrap();
+        let mut inner = self.inner.lock().unwrap_or_else(|e| {
+            eprintln!("Mutex was poisoned in FileWatcher::unwatch, recovering: {}", e);
+            e.into_inner()
+        });
         inner.running.store(false, Ordering::Relaxed);
         inner.handle = None;
         Ok(())

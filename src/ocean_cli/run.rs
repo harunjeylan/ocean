@@ -227,7 +227,7 @@ fn cmd_chunk(args: ChunkArgs) -> Result<(), String> {
         overlap_sentences: args.overlap,
         include_images: args.include_images,
         rows_per_sheet_chunk: args.rows_per_chunk,
-        token_estimator: None,
+        token_estimator: crate::ocean_chunk::default_token_estimator,
     };
 
     let chunks = api_docs::chunk_doc(&args.file, Some(config)).map_err(|e| e.to_string())?;
@@ -513,14 +513,27 @@ fn cmd_graph_path(from: String, to: String, max_depth: usize, db_path: String) -
 }
 
 fn cmd_graph_stats(db_path: String) -> Result<(), String> {
-    let stats = api_graph::graph_stats(&db_path).map_err(|e| e.to_string())?;
+    use std::sync::Arc;
+    use crate::ocean_storage::config::StorageConfig;
+    use crate::ocean_storage::graph_store::{GraphStore, NodeType};
+    use crate::ocean_storage::SurrealGraphStore;
+
+    let config = StorageConfig::new(&db_path);
+    let store = SurrealGraphStore::new_persistent_at(&db_path, &config)
+        .map_err(|e| format!("Failed to open graph store: {}", e))?;
+    store.initialize_schema()
+        .map_err(|e| format!("Failed to init schema: {}", e))?;
+    let store: Arc<dyn GraphStore> = Arc::new(store);
+
+    let total_nodes = store.count_nodes().unwrap_or(0);
+    let total_edges = store.count_edges().unwrap_or(0);
     let type_counts = vec![
-        ("File".to_string(), 0u64),
-        ("Chunk".to_string(), 0u64),
-        ("Heading".to_string(), 0u64),
-        ("Entity".to_string(), 0u64),
-        ("Folder".to_string(), 0u64),
+        ("File".to_string(), store.get_nodes_by_type(NodeType::File).map(|v| v.len() as u64).unwrap_or(0)),
+        ("Chunk".to_string(), store.get_nodes_by_type(NodeType::Chunk).map(|v| v.len() as u64).unwrap_or(0)),
+        ("Heading".to_string(), store.get_nodes_by_type(NodeType::Heading).map(|v| v.len() as u64).unwrap_or(0)),
+        ("Entity".to_string(), store.get_nodes_by_type(NodeType::Entity).map(|v| v.len() as u64).unwrap_or(0)),
+        ("Folder".to_string(), store.get_nodes_by_type(NodeType::Folder).map(|v| v.len() as u64).unwrap_or(0)),
     ];
-    print_graph_stats(stats.node_count, stats.edge_count, type_counts);
+    print_graph_stats(total_nodes, total_edges, type_counts);
     Ok(())
 }

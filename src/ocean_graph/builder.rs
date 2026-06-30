@@ -1,5 +1,7 @@
 use std::collections::HashMap;
+use std::sync::OnceLock;
 
+use regex::Regex;
 use sha2::{Digest, Sha256};
 
 use crate::ocean_chunk::Chunk;
@@ -142,15 +144,35 @@ impl GraphBuilder {
         (nodes, edges)
     }
 
+    fn see_regex() -> &'static Regex {
+        static RE: OnceLock<Regex> = OnceLock::new();
+        RE.get_or_init(|| Regex::new(r"(?i)see\s+['\x{201C}]?([A-Z][A-Za-z0-9 ]{2,50})").unwrap())
+    }
+
+    fn refer_regex() -> &'static Regex {
+        static RE: OnceLock<Regex> = OnceLock::new();
+        RE.get_or_init(|| Regex::new(r"(?i)refer\s+to\s+['\x{201C}]?([A-Z][A-Za-z0-9 ]{2,50})").unwrap())
+    }
+
+    fn as_per_regex() -> &'static Regex {
+        static RE: OnceLock<Regex> = OnceLock::new();
+        RE.get_or_init(|| Regex::new(r"(?i)as\s+per\s+['\x{201C}]?([A-Z][A-Za-z0-9 ]{2,50})").unwrap())
+    }
+
+    fn per_regex() -> &'static Regex {
+        static RE: OnceLock<Regex> = OnceLock::new();
+        RE.get_or_init(|| Regex::new(r"(?i)per\s+['\x{201C}]?([A-Z][A-Za-z0-9 ]{2,50})").unwrap())
+    }
+
+    fn quoted_regex() -> &'static Regex {
+        static RE: OnceLock<Regex> = OnceLock::new();
+        RE.get_or_init(|| Regex::new(r#"['\u{201C}]([A-Z][A-Za-z0-9 ]{3,60})['\u{201D}]"#).unwrap())
+    }
+
     pub fn extract_references(chunks: &[Chunk], nodes: &[Node]) -> Vec<Edge> {
         let mut edges = Vec::new();
 
-        let see_pat = regex::Regex::new(r"(?i)see\s+['\x{201C}]?([A-Z][A-Za-z0-9 ]{2,50})").unwrap();
-        let refer_pat = regex::Regex::new(r"(?i)refer\s+to\s+['\x{201C}]?([A-Z][A-Za-z0-9 ]{2,50})").unwrap();
-        let as_per_pat = regex::Regex::new(r"(?i)as\s+per\s+['\x{201C}]?([A-Z][A-Za-z0-9 ]{2,50})").unwrap();
-        let per_pat = regex::Regex::new(r"(?i)per\s+['\x{201C}]?([A-Z][A-Za-z0-9 ]{2,50})").unwrap();
-        let quoted_pat = regex::Regex::new(r#"['\u{201C}]([A-Z][A-Za-z0-9 ]{3,60})['\u{201D}]"#).unwrap();
-        let patterns: [&regex::Regex; 5] = [&see_pat, &refer_pat, &as_per_pat, &per_pat, &quoted_pat];
+        let patterns: [&Regex; 5] = [Self::see_regex(), Self::refer_regex(), Self::as_per_regex(), Self::per_regex(), Self::quoted_regex()];
 
         let known_targets: Vec<String> = nodes
             .iter()

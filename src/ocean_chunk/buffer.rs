@@ -34,14 +34,11 @@ impl ChunkBuffer {
         self.content.len()
     }
 
-    pub fn estimated_tokens(&self, estimator: &Option<fn(&str) -> usize>) -> usize {
+    pub fn estimated_tokens(&self, estimator: &fn(&str) -> usize) -> usize {
         if self.content.is_empty() {
             return 0;
         }
-        match estimator {
-            Some(f) => f(&self.content),
-            None => self.content.len() / 4,
-        }
+        estimator(&self.content)
     }
 
     pub fn append(&mut self, text: &str, block_type: ChunkType, config: &ChunkConfig) {
@@ -72,10 +69,7 @@ impl ChunkBuffer {
             return;
         }
 
-        let estimated = match &config.token_estimator {
-            Some(f) => f(&content),
-            None => content.len() / 4,
-        };
+        let estimated = (config.token_estimator)(&content);
 
         if estimated < config.min_tokens && !self.chunks.is_empty() {
             if let Some(last) = self.chunks.last_mut() {

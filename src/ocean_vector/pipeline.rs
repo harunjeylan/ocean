@@ -4,7 +4,7 @@ use std::time::Instant;
 
 use crate::ocean_cache::EmbeddingCache;
 use crate::ocean_chunk::Chunk;
-use crate::ocean_storage::chunk_store::ChunkRecord;
+use crate::ocean_storage::chunk_store::{ChunkData, ChunkRecord};
 use crate::ocean_storage::{ChunkStore, VectorStore};
 use crate::ocean_vector::embedder::{Embedder, EmbedderError};
 
@@ -40,31 +40,31 @@ pub struct IndexReport {
     pub skipped: usize,
     pub failed: usize,
     pub duration_ms: u64,
-    pub errors: Vec<IndexError>,
+    pub errors: Vec<PipelineError>,
     pub graph_nodes: usize,
     pub graph_edges: usize,
 }
 
 #[derive(Debug, Clone)]
-pub enum IndexError {
+pub enum PipelineError {
     Embedder(EmbedderError),
     Store(String),
 }
 
-impl fmt::Display for IndexError {
+impl fmt::Display for PipelineError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            IndexError::Embedder(e) => write!(f, "embedder error: {}", e),
-            IndexError::Store(e) => write!(f, "store error: {}", e),
+            PipelineError::Embedder(e) => write!(f, "embedder error: {}", e),
+            PipelineError::Store(e) => write!(f, "store error: {}", e),
         }
     }
 }
 
-impl std::error::Error for IndexError {}
+impl std::error::Error for PipelineError {}
 
-impl From<EmbedderError> for IndexError {
+impl From<EmbedderError> for PipelineError {
     fn from(e: EmbedderError) -> Self {
-        IndexError::Embedder(e)
+        PipelineError::Embedder(e)
     }
 }
 
@@ -92,7 +92,7 @@ impl IndexPipeline {
         chunks: Vec<Chunk>,
         embedder: &dyn Embedder,
         config: &IndexConfig,
-    ) -> Result<IndexReport, IndexError> {
+    ) -> Result<IndexReport, PipelineError> {
         let start = Instant::now();
         let mut embedded = 0usize;
         let mut skipped = 0usize;
@@ -118,7 +118,17 @@ impl IndexPipeline {
                 let mut already_cached = false;
                 if let Some(ref cache) = self.embed_cache {
                     if let Some(emb) = cache.get(&hash, &config.model) {
-                        let record = ChunkRecord::from_chunk(chunk, emb.clone(), &config.model);
+                        let data = ChunkData {
+                            id: chunk.id.clone(),
+                            file_id: chunk.file_id.clone(),
+                            content: chunk.content.clone(),
+                            heading: chunk.heading.clone(),
+                            block_type: format!("{:?}", chunk.block_type),
+                            page: chunk.page.map(|p| p as i64),
+                            slide: chunk.slide.map(|s| s as i64),
+                            sheet: chunk.sheet.clone(),
+                        };
+                        let record = ChunkRecord::from_data(&data, emb.clone(), &config.model);
                         cached.push((record, emb));
                         already_cached = true;
                     }
@@ -139,7 +149,7 @@ impl IndexPipeline {
                         }
                         Err(e) => {
                             failed += 1;
-                            errors.push(IndexError::Store(e.to_string()));
+                            errors.push(PipelineError::Store(e.to_string()));
                             skip_indices[i] = true;
                         }
                     }
@@ -153,7 +163,7 @@ impl IndexPipeline {
                     Ok(_) => embedded += 1,
                     Err(e) => {
                         failed += 1;
-                        errors.push(IndexError::Store(e.to_string()));
+                        errors.push(PipelineError::Store(e.to_string()));
                     }
                 }
             }
@@ -167,12 +177,22 @@ impl IndexPipeline {
             match embedder.embed_batch(&texts) {
                 Ok(embeddings) => {
                     for ((chunk, _, hash), embedding) in to_embed.into_iter().zip(embeddings.into_iter()) {
-                        let record = ChunkRecord::from_chunk(chunk, embedding.clone(), &config.model);
+                        let data = ChunkData {
+                            id: chunk.id.clone(),
+                            file_id: chunk.file_id.clone(),
+                            content: chunk.content.clone(),
+                            heading: chunk.heading.clone(),
+                            block_type: format!("{:?}", chunk.block_type),
+                            page: chunk.page.map(|p| p as i64),
+                            slide: chunk.slide.map(|s| s as i64),
+                            sheet: chunk.sheet.clone(),
+                        };
+                        let record = ChunkRecord::from_data(&data, embedding.clone(), &config.model);
                         match self.store.insert(&record) {
                             Ok(_) => embedded += 1,
                             Err(e) => {
                                 failed += 1;
-                                errors.push(IndexError::Store(e.to_string()));
+                                errors.push(PipelineError::Store(e.to_string()));
                             }
                         }
                         if let Some(ref cache) = self.embed_cache {
@@ -182,7 +202,7 @@ impl IndexPipeline {
                 }
                 Err(e) => {
                     failed += texts.len();
-                    errors.push(IndexError::Embedder(e));
+                    errors.push(PipelineError::Embedder(e));
                 }
             }
         }

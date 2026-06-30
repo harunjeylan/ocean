@@ -131,9 +131,7 @@ pub fn vector_search(request: VectorSearchRequest) -> Result<Vec<SearchResult>, 
         if let Ok(gs) = SurrealGraphStore::new_persistent_at(&graph_path, &gconfig) {
             if gs.initialize_schema().is_ok() {
                 let expansion = crate::ocean_graph::ExpansionEngine::new(std::sync::Arc::new(gs));
-                if let Ok(expanded) = engine.expand_results(&results, &expansion, request.expand_depth) {
-                    results = expanded;
-                }
+                results = crate::ocean_query::engine::expand_results(&results, &expansion, request.expand_depth, engine.store_ref());
             }
         }
     }

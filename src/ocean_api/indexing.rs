@@ -104,7 +104,7 @@ pub fn index_directory(request: IndexRequest) -> Result<IndexResult, ApiError> {
             overlap_sentences: chunk_config.overlap_sentences,
             include_images: chunk_config.include_images,
             rows_per_sheet_chunk: chunk_config.rows_per_sheet_chunk,
-            token_estimator: None,
+            token_estimator: crate::ocean_chunk::default_token_estimator,
         },
         graph_config: GraphConfig {
             extract_references: !request.no_references,

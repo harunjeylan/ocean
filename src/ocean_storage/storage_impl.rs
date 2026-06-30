@@ -107,16 +107,25 @@ impl Storage for SurrealStorage {
     }
 
     fn begin_transaction(&mut self) -> Result<(), StorageError> {
-        let mut depth = self.transaction_depth.lock().unwrap();
+        let mut depth = self.transaction_depth.lock().unwrap_or_else(|e| {
+            eprintln!("Mutex was poisoned in begin_transaction, recovering: {}", e);
+            e.into_inner()
+        });
         if *depth == 0 {
-            self.staging.lock().unwrap().clear();
+            self.staging.lock().unwrap_or_else(|e| {
+                eprintln!("Mutex was poisoned in begin_transaction, recovering: {}", e);
+                e.into_inner()
+            }).clear();
         }
         *depth += 1;
         Ok(())
     }
 
     fn commit(&mut self) -> Result<(), StorageError> {
-        let mut depth = self.transaction_depth.lock().unwrap();
+        let mut depth = self.transaction_depth.lock().unwrap_or_else(|e| {
+            eprintln!("Mutex was poisoned in commit, recovering: {}", e);
+            e.into_inner()
+        });
         if *depth == 0 {
             return Err(StorageError::TransactionFailed {
                 succeeded: vec![],
@@ -130,7 +139,10 @@ impl Storage for SurrealStorage {
         *depth = 0;
         drop(depth);
 
-        let writes = self.staging.lock().unwrap().drain();
+        let writes = self.staging.lock().unwrap_or_else(|e| {
+            eprintln!("Mutex was poisoned in commit, recovering: {}", e);
+            e.into_inner()
+        }).drain();
         if writes.is_empty() {
             return Ok(());
         }
@@ -192,7 +204,10 @@ impl Storage for SurrealStorage {
     }
 
     fn rollback(&mut self) -> Result<(), StorageError> {
-        let mut depth = self.transaction_depth.lock().unwrap();
+        let mut depth = self.transaction_depth.lock().unwrap_or_else(|e| {
+            eprintln!("Mutex was poisoned in rollback, recovering: {}", e);
+            e.into_inner()
+        });
         if *depth == 0 {
             return Err(StorageError::TransactionFailed {
                 succeeded: vec![],
@@ -201,12 +216,18 @@ impl Storage for SurrealStorage {
         }
         *depth = 0;
         drop(depth);
-        self.staging.lock().unwrap().clear();
+        self.staging.lock().unwrap_or_else(|e| {
+            eprintln!("Mutex was poisoned in rollback, recovering: {}", e);
+            e.into_inner()
+        }).clear();
         Ok(())
     }
 
     fn in_transaction(&self) -> bool {
-        *self.transaction_depth.lock().unwrap() > 0
+        *self.transaction_depth.lock().unwrap_or_else(|e| {
+            eprintln!("Mutex was poisoned in in_transaction, recovering: {}", e);
+            e.into_inner()
+        }) > 0
     }
 
     fn storage_path(&self) -> &str {

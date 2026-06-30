@@ -1,7 +1,18 @@
 use serde::{Deserialize, Serialize};
 
-use crate::ocean_chunk::Chunk;
 use crate::ocean_storage::error::StorageError;
+
+#[derive(Debug, Clone)]
+pub struct ChunkData {
+    pub id: String,
+    pub file_id: String,
+    pub content: String,
+    pub heading: Option<String>,
+    pub block_type: String,
+    pub page: Option<i64>,
+    pub slide: Option<i64>,
+    pub sheet: Option<String>,
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChunkRecord {
@@ -21,23 +32,23 @@ pub struct ChunkRecord {
 }
 
 impl ChunkRecord {
-    pub fn from_chunk(chunk: &Chunk, embedding: Vec<f32>, model: &str) -> Self {
+    pub fn from_data(data: &ChunkData, embedding: Vec<f32>, model: &str) -> Self {
         let dimension = embedding.len() as i64;
         let content_hash = {
             use sha2::{Digest, Sha256};
             let mut hasher = Sha256::new();
-            hasher.update(chunk.content.as_bytes());
+            hasher.update(data.content.as_bytes());
             format!("{:x}", hasher.finalize())
         };
         Self {
-            chunk_id: chunk.id.clone(),
-            file_id: chunk.file_id.clone(),
-            content: chunk.content.clone(),
-            heading: chunk.heading.clone(),
-            page: chunk.page.map(|p| p as i64),
-            slide: chunk.slide.map(|s| s as i64),
-            sheet: chunk.sheet.clone(),
-            block_type: format!("{:?}", chunk.block_type),
+            chunk_id: data.id.clone(),
+            file_id: data.file_id.clone(),
+            content: data.content.clone(),
+            heading: data.heading.clone(),
+            page: data.page,
+            slide: data.slide,
+            sheet: data.sheet.clone(),
+            block_type: data.block_type.clone(),
             content_hash,
             created_at: std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)

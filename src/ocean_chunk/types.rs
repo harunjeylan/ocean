@@ -34,7 +34,11 @@ pub struct ChunkConfig {
     pub overlap_sentences: usize,
     pub include_images: bool,
     pub rows_per_sheet_chunk: usize,
-    pub token_estimator: Option<fn(&str) -> usize>,
+    pub token_estimator: fn(&str) -> usize,
+}
+
+pub fn default_token_estimator(text: &str) -> usize {
+    text.split_whitespace().count() + text.matches(|c: char| c.is_ascii_punctuation()).count() / 2
 }
 
 impl Default for ChunkConfig {
@@ -45,7 +49,7 @@ impl Default for ChunkConfig {
             overlap_sentences: 1,
             include_images: false,
             rows_per_sheet_chunk: 50,
-            token_estimator: None,
+            token_estimator: default_token_estimator,
         }
     }
 }
@@ -76,6 +80,13 @@ impl PartialEq for ChunkConfig {
             && self.overlap_sentences == other.overlap_sentences
             && self.include_images == other.include_images
             && self.rows_per_sheet_chunk == other.rows_per_sheet_chunk
+    }
+}
+
+impl ChunkConfig {
+    pub fn with_token_estimator(mut self, estimator: fn(&str) -> usize) -> Self {
+        self.token_estimator = estimator;
+        self
     }
 }
 

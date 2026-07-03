@@ -3,9 +3,9 @@ use std::path::PathBuf;
 use quick_xml::Reader;
 use quick_xml::events::Event;
 
-use crate::ocean_parser::helpers::{validate_file_size, build_outline_tree};
+use crate::ocean_parser::helpers::validate_file_size;
 use crate::ocean_parser::{
-    Document, DocumentError, DocumentFormat, DocumentMetadata, Match, Outline, ReadResult, Run,
+    Document, DocumentError, DocumentFormat, DocumentMetadata, Match, ReadResult, Run,
     Selector,
 };
 
@@ -649,26 +649,7 @@ impl Document for HtmlDocument {
         }
     }
 
-    fn outline(&self) -> Outline {
-        let headings_data: Vec<(u8, String)> = self
-            .headings
-            .iter()
-            .map(|h| {
-                let level = match h.element_type {
-                    ElementType::Heading(l) => l,
-                    _ => 1,
-                };
-                (level, h.text())
-            })
-            .collect();
-        Outline {
-            entries: build_outline_tree(&headings_data),
-        }
-    }
 
-    fn page_count(&self) -> Option<u32> {
-        None
-    }
 
     fn search(&self, query: &str) -> Vec<Match> {
         let q = query.to_lowercase();

@@ -6,9 +6,9 @@ use quick_xml::Reader;
 use quick_xml::events::Event;
 use zip::ZipArchive;
 
-use crate::ocean_parser::helpers::{validate_file_size, parse_iso8601_date, build_outline_tree_from_selectors};
+use crate::ocean_parser::helpers::{validate_file_size, parse_iso8601_date};
 use crate::ocean_parser::{
-    Document, DocumentError, DocumentFormat, DocumentMetadata, Match, Outline,
+    Document, DocumentError, DocumentFormat, DocumentMetadata, Match,
     ReadResult, Selector, DocumentElement, ParagraphElement, Run, TableElement, TableCell,
     ImageElement, ImagePosition, ImageFormat, HeadingElement, ListElement, ListItem,
     PageLayout, PageOrientation, Margins, TextAlignment,
@@ -1199,33 +1199,6 @@ impl Document for DocxDocument {
                 Some(self.pages.len() as u32)
             },
             size: self.size,
-        }
-    }
-
-    fn outline(&self) -> Outline {
-        let headings: Vec<(u8, String, Selector)> = self
-            .paragraphs
-            .iter()
-            .enumerate()
-            .filter_map(|(i, para)| {
-                Self::is_heading_style(&para.style).map(|level| {
-                    let page_num = self.para_to_page.get(i).copied().unwrap_or(1);
-                    (level, para.text.clone(), Selector::Page(page_num as u32))
-                })
-            })
-            .collect();
-        Outline { entries: build_outline_tree_from_selectors(&headings) }
-    }
-
-    fn page_count(&self) -> Option<u32> {
-        if self.pages.is_empty() {
-            if self.paragraphs.is_empty() {
-                None
-            } else {
-                Some(1)
-            }
-        } else {
-            Some(self.pages.len() as u32)
         }
     }
 

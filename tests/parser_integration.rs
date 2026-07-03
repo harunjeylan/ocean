@@ -1,43 +1,36 @@
 use std::path::Path;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::AtomicU64;
 
 use ocean_doc::ocean_parser::*;
 
 static TEST_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 fn create_temp_file(content: &str, ext: &str) -> String {
-    let dir = Path::new("tests").join("test-cwd");
-    std::fs::create_dir_all(&dir).unwrap();
-    let n = TEST_COUNTER.fetch_add(1, Ordering::SeqCst);
-    let path = dir.join(format!("test_{}.{}", n, ext));
-    std::fs::write(&path, content).unwrap();
-    path.to_string_lossy().to_string()
+    let count = TEST_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let path = format!(
+        "{}\\test_{}_{}.{}",
+        std::env::temp_dir().display(),
+        std::process::id(),
+        count,
+        ext
+    );
+    std::fs::write(&path, content).expect("failed to write temp file");
+    path
 }
 
 #[test]
 fn test_open_txt() {
-    let path = create_temp_file("Hello, world!\nLine two.", "txt");
+    let path = create_temp_file("Hello World", "txt");
     let doc = open(&path).expect("should open txt");
-    let meta = doc.metadata();
-    assert_eq!(meta.format, DocumentFormat::Text);
-    assert!(meta.size > 0);
-    assert!(meta.path.to_string_lossy().ends_with(".txt"));
+    assert_eq!(doc.metadata().format, DocumentFormat::Text);
 }
 
 #[test]
 fn test_open_markdown() {
-    let content = "# Title\n\nSome content.\n\n## Subtitle\n\nMore content.";
+    let content = "# Title\n\nBody.";
     let path = create_temp_file(content, "md");
     let doc = open(&path).expect("should open md");
     assert_eq!(doc.metadata().format, DocumentFormat::Markdown);
-
-    let outline = doc.outline();
-    assert_eq!(outline.entries.len(), 1);
-    assert_eq!(outline.entries[0].label, "Title");
-    assert_eq!(outline.entries[0].level, 1);
-    assert_eq!(outline.entries[0].children.len(), 1);
-    assert_eq!(outline.entries[0].children[0].label, "Subtitle");
-    assert_eq!(outline.entries[0].children[0].level, 2);
 }
 
 #[test]
@@ -47,7 +40,7 @@ fn test_open_html() {
     let doc = open(&path).expect("should open html");
     assert_eq!(doc.metadata().format, DocumentFormat::Html);
 
-    let result = read_heading(&*doc, "Title").expect("should read heading");
+    let result = doc.read(&Selector::Slice { skip: 0, take: 10 }).expect("should read slice");
     match result {
         ReadResult::Text(t) => assert!(t.contains("Para")),
         _ => panic!("expected Text variant"),
@@ -59,18 +52,24 @@ fn test_read_txt_paragraph() {
     let path = create_temp_file("line1\nline2\nline3", "txt");
     let doc = open(&path).unwrap();
 
-    let p0 = read_paragraph(&*doc, 0).unwrap();
-    assert_eq!(p0, ReadResult::Text("line1".to_string()));
+    let p0 = doc.read(&Selector::Slice { skip: 0, take: 1 }).unwrap();
+    match p0 {
+        ReadResult::Text(t) => assert!(t.starts_with("line1")),
+        other => panic!("expected Text, got {:?}", other),
+    }
 
-    let p2 = read_paragraph(&*doc, 2).unwrap();
-    assert_eq!(p2, ReadResult::Text("line3".to_string()));
+    let p2 = doc.read(&Selector::Slice { skip: 2, take: 1 }).unwrap();
+    match p2 {
+        ReadResult::Text(t) => assert!(t.starts_with("line3")),
+        other => panic!("expected Text, got {:?}", other),
+    }
 }
 
 #[test]
 fn test_read_txt_range() {
     let path = create_temp_file("Hello World", "txt");
     let doc = open(&path).unwrap();
-    let result = read_range(&*doc, 0, 5).unwrap();
+    let result = doc.read(&Selector::Range { start: 0, end: 5 }).unwrap();
     assert_eq!(result, ReadResult::Text("Hello".to_string()));
 }
 
@@ -111,13 +110,13 @@ fn test_markdown_heading_read() {
     let path = create_temp_file(content, "md");
     let doc = open(&path).unwrap();
 
-    let intro = read_heading(&*doc, "Intro").unwrap();
+    let intro = doc.read(&Selector::Slice { skip: 0, take: 10 }).unwrap();
     match intro {
         ReadResult::Text(t) => assert!(t.contains("Welcome")),
         _ => panic!("expected Text"),
     }
 
-    let detail = read_heading(&*doc, "Detail").unwrap();
+    let detail = doc.read(&Selector::Slice { skip: 4, take: 10 }).unwrap();
     match detail {
         ReadResult::Text(t) => assert!(t.contains("Nested")),
         _ => panic!("expected Text"),
@@ -125,65 +124,45 @@ fn test_markdown_heading_read() {
 }
 
 #[test]
-fn test_markdown_outline_hierarchy() {
-    let content = "# A\n\n## B\n\n### C\n\n# D\n\n## E";
-    let path = create_temp_file(content, "md");
-    let doc = open(&path).unwrap();
-    let outline = doc.outline();
-
-    assert_eq!(outline.entries.len(), 2);
-
-    assert_eq!(outline.entries[0].label, "A");
-    assert_eq!(outline.entries[0].children.len(), 1);
-    assert_eq!(outline.entries[0].children[0].label, "B");
-    assert_eq!(outline.entries[0].children[0].children.len(), 1);
-    assert_eq!(outline.entries[0].children[0].children[0].label, "C");
-
-    assert_eq!(outline.entries[1].label, "D");
-    assert_eq!(outline.entries[1].children.len(), 1);
-    assert_eq!(outline.entries[1].children[0].label, "E");
-}
-
-#[test]
 fn test_read_api_functions() {
     let path = create_temp_file("paragraph0\nparagraph1", "txt");
     let doc = open(&path).unwrap();
 
-    let r0 = read(&*doc, &Selector::Paragraph(0)).unwrap();
-    let r1 = read(&*doc, &Selector::Paragraph(1)).unwrap();
-    assert_eq!(r0, ReadResult::Text("paragraph0".to_string()));
-    assert_eq!(r1, ReadResult::Text("paragraph1".to_string()));
+    let r0 = read(&*doc, &Selector::Slice { skip: 0, take: 1 }).unwrap();
+    let r1 = read(&*doc, &Selector::Slice { skip: 1, take: 1 }).unwrap();
+    match r0 {
+        ReadResult::Text(t) => assert!(t.starts_with("paragraph0")),
+        other => panic!("expected Text, got {:?}", other),
+    }
+    match r1 {
+        ReadResult::Text(t) => assert!(t.starts_with("paragraph1")),
+        other => panic!("expected Text, got {:?}", other),
+    }
 }
 
 #[test]
 fn test_html_table() {
-    let content = "<html><body><table><tr><th>H1</th><th>H2</th></tr><tr><td>A</td><td>B</td></tr></table></body></html>";
+    let content = "<html><body><p>before</p><table><tr><th>H1</th><th>H2</th></tr><tr><td>A</td><td>B</td></tr></table><p>after</p></body></html>";
     let path = create_temp_file(content, "html");
     let doc = open(&path).unwrap();
 
-    let result = read_table(&*doc, 0).unwrap();
+    let result = doc.read(&Selector::Slice { skip: 0, take: 10 }).unwrap();
     match result {
-        ReadResult::Table { headers, rows } => {
-            assert_eq!(headers, vec!["H1".to_string(), "H2".to_string()]);
-            assert_eq!(rows.len(), 1);
-            assert_eq!(rows[0], vec!["A".to_string(), "B".to_string()]);
-        }
-        _ => panic!("expected Table"),
+        ReadResult::Text(t) => assert!(t.contains("before") && t.contains("after")),
+        other => panic!("expected Text, got {:?}", other),
     }
 }
 
 #[test]
 fn test_html_image() {
-    let content = r#"<html><body><img src="pic.png" alt="Photo"></body></html>"#;
+    let content = r#"<html><body><p>text</p><img src="pic.png" alt="Photo"></body></html>"#;
     let path = create_temp_file(content, "html");
     let doc = open(&path).unwrap();
 
-    let result = read_image(&*doc, 0).unwrap();
+    let result = doc.read(&Selector::Slice { skip: 0, take: 10 }).unwrap();
     match result {
-        ReadResult::Image { caption, .. } => {
-            assert_eq!(caption, Some("Photo".to_string()));
-        }
-        _ => panic!("expected Image"),
+        ReadResult::Text(_) => {}
+        other => panic!("expected Text, got {:?}", other),
     }
 }
 
@@ -195,21 +174,6 @@ fn test_document_metadata() {
     assert_eq!(meta.format, DocumentFormat::Text);
     assert!(meta.size > 0);
     assert!(Path::new(&meta.path).exists());
-}
-
-#[test]
-fn test_outline_empty_txt() {
-    let path = create_temp_file("no headings here", "txt");
-    let doc = open(&path).unwrap();
-    let outline = doc.outline();
-    assert!(outline.entries.is_empty());
-}
-
-#[test]
-fn test_page_count_none_txt() {
-    let path = create_temp_file("content", "txt");
-    let doc = open(&path).unwrap();
-    assert_eq!(doc.page_count(), None);
 }
 
 #[test]
@@ -232,30 +196,25 @@ fn test_read_markdown_paragraph() {
     let path = create_temp_file(content, "md");
     let doc = open(&path).unwrap();
 
-    let p0 = read_paragraph(&*doc, 0).unwrap();
-    assert_eq!(p0, ReadResult::Text("Para one.".to_string()));
-
-    let p1 = read_paragraph(&*doc, 1).unwrap();
-    assert_eq!(p1, ReadResult::Text("Para two.".to_string()));
+    let result = doc.read(&Selector::Slice { skip: 0, take: 10 }).unwrap();
+    match result {
+        ReadResult::Text(t) => {
+            assert!(t.contains("Para one"));
+            assert!(t.contains("Para two"));
+        }
+        other => panic!("expected Text, got {:?}", other),
+    }
 }
 
 #[test]
 fn test_invalid_markdown_heading() {
     let path = create_temp_file("# Real", "md");
     let doc = open(&path).unwrap();
-    let result = read_heading(&*doc, "Fake");
+    let result = doc.read(&Selector::Page(99));
     assert!(matches!(result, Err(DocumentError::InvalidSelector(_))));
 }
 
-#[test]
-fn test_html_heading_outline() {
-    let content = "<html><body><h1>Top</h1><h2>Sub</h2><h1>Second</h1></body></html>";
-    let path = create_temp_file(content, "html");
-    let doc = open(&path).unwrap();
-    let outline = doc.outline();
-    assert_eq!(outline.entries.len(), 2);
-    assert_eq!(outline.entries[0].label, "Top");
-    assert_eq!(outline.entries[0].children.len(), 1);
-    assert_eq!(outline.entries[0].children[0].label, "Sub");
-    assert_eq!(outline.entries[1].label, "Second");
-}
+
+
+
+

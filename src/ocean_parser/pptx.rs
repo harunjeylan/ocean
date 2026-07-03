@@ -8,7 +8,7 @@ use zip::ZipArchive;
 
 use crate::ocean_parser::{
     Document, DocumentError, DocumentFormat, DocumentMetadata, ImageElement, ImageFormat,
-    ImagePosition, ListElement, ListItem, Match, Outline, OutlineEntry, ParagraphElement, Run,
+    ImagePosition, ListElement, ListItem, Match, ParagraphElement, Run,
     ReadResult, Selector, TableCell, TableElement, DocumentElement, HeadingElement,
 };
 use crate::ocean_parser::helpers::{validate_file_size, parse_iso8601_date};
@@ -1252,28 +1252,6 @@ impl Document for PptxDocument {
             page_count: Some(self.slide_count),
             size: self.size,
         }
-    }
-
-    fn outline(&self) -> Outline {
-        let entries: Vec<OutlineEntry> = self
-            .slide_contents
-            .iter()
-            .map(|s| OutlineEntry {
-                label: s
-                    .title
-                    .clone()
-                    .unwrap_or_else(|| format!("Slide {}", s.number)),
-                level: 1,
-                selector: Selector::Slide(s.number),
-                children: vec![],
-            })
-            .collect();
-
-        Outline { entries }
-    }
-
-    fn page_count(&self) -> Option<u32> {
-        Some(self.slide_count)
     }
 
     fn search(&self, query: &str) -> Vec<Match> {

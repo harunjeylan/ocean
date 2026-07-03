@@ -6,11 +6,8 @@ pub enum DocumentError {
     InvalidSelector(String),
     CorruptedFile(String),
     PermissionDenied(String),
-    ReadOnly(String),
     InvalidEncoding(String),
-    OCRFailed(String),
     ParseFailed(String),
-    SaveFailed(String),
 }
 
 impl fmt::Display for DocumentError {
@@ -20,13 +17,9 @@ impl fmt::Display for DocumentError {
             DocumentError::InvalidSelector(msg) => write!(f, "invalid selector: {}", msg),
             DocumentError::CorruptedFile(msg) => write!(f, "corrupted file: {}", msg),
             DocumentError::PermissionDenied(msg) => write!(f, "permission denied: {}", msg),
-            DocumentError::ReadOnly(msg) => write!(f, "read-only: {}", msg),
             DocumentError::InvalidEncoding(msg) => write!(f, "invalid encoding: {}", msg),
-            DocumentError::OCRFailed(msg) => write!(f, "OCR failed: {}", msg),
             DocumentError::ParseFailed(msg) => write!(f, "parse failed: {}", msg),
-            DocumentError::SaveFailed(msg) => write!(f, "save failed: {}", msg),
         }
     }
 }
 
-impl std::error::Error for DocumentError {}

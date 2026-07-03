@@ -59,15 +59,6 @@ fn build_selector(params: &ReadParams) -> Result<Selector, CallToolResult> {
             let n = val.parse::<u32>().map_err(|_| to_error("Invalid page number"))?;
             Ok(Selector::Page(n))
         }
-        (Some("heading"), Some(val), _, _) => Ok(Selector::Heading(val.to_string())),
-        (Some("paragraph"), Some(val), _, _) => {
-            let n = val.parse::<u32>().map_err(|_| to_error("Invalid paragraph number"))?;
-            Ok(Selector::Paragraph(n))
-        }
-        (Some("table"), Some(val), _, _) => {
-            let n = val.parse::<u32>().map_err(|_| to_error("Invalid table number"))?;
-            Ok(Selector::Table(n))
-        }
         (Some("slide"), Some(val), _, _) => {
             let n = val.parse::<u32>().map_err(|_| to_error("Invalid slide number"))?;
             Ok(Selector::Slide(n))
@@ -167,8 +158,7 @@ pub async fn handle_info(params: InfoParams) -> CallToolResult {
         return file_not_found(&path);
     }
     match tokio::task::spawn_blocking(move || ocean_api::docs::open_doc(&path)).await {
-        Ok(Ok(doc_result)) => {
-            let meta = &doc_result.metadata;
+        Ok(Ok(meta)) => {
             let mut lines = vec![
                 format!("File: {}", meta.path.display()),
                 format!("Format: {:?}", meta.format),
@@ -183,26 +173,11 @@ pub async fn handle_info(params: InfoParams) -> CallToolResult {
             if let Some(pc) = meta.page_count {
                 lines.push(format!("Page count: {}", pc));
             }
-            lines.push(String::new());
-            lines.push("Outline:".to_string());
-            lines.push(format_outline_entries(&doc_result.outline.entries, 0));
             to_text(lines.join("\n"))
         }
         Ok(Err(e)) => to_error(&e.to_string()),
         Err(e) => to_error(&format!("Task failed: {}", e)),
     }
-}
-
-fn format_outline_entries(entries: &[crate::ocean_parser::OutlineEntry], depth: usize) -> String {
-    let indent = "  ".repeat(depth);
-    let mut parts = Vec::new();
-    for entry in entries {
-        parts.push(format!("{}- {} (level {})", indent, entry.label, entry.level));
-        if !entry.children.is_empty() {
-            parts.push(format_outline_entries(&entry.children, depth + 1));
-        }
-    }
-    parts.join("\n")
 }
 
 pub async fn handle_scan(params: ScanParams) -> CallToolResult {

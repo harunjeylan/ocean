@@ -4,14 +4,10 @@ use std::sync::{Arc, OnceLock};
 
 use crate::ocean_parser::{Document, DocumentError, DocumentFormat};
 
-pub trait DocumentFactory: Send + Sync {
-    fn open(&self, path: &str) -> Result<Box<dyn Document>, DocumentError>;
-}
-
-pub type SharedFactory = Arc<dyn DocumentFactory>;
+pub type OpenFn = Arc<dyn Fn(&str) -> Result<Box<dyn Document>, DocumentError> + Send + Sync>;
 
 pub struct BackendRegistry {
-    backends: HashMap<String, SharedFactory>,
+    backends: HashMap<String, OpenFn>,
 }
 
 impl BackendRegistry {
@@ -19,13 +15,13 @@ impl BackendRegistry {
         Self { backends: HashMap::new() }
     }
 
-    pub fn register(&mut self, format: DocumentFormat, factory: SharedFactory) {
+    pub fn register(&mut self, format: DocumentFormat, open_fn: OpenFn) {
         for ext in format.extensions() {
-            self.backends.insert(ext.to_string(), Arc::clone(&factory));
+            self.backends.insert(ext.to_string(), Arc::clone(&open_fn));
         }
     }
 
-    pub fn get(&self, ext: &str) -> Option<SharedFactory> {
+    pub fn get(&self, ext: &str) -> Option<OpenFn> {
         self.backends.get(ext).cloned()
     }
 
@@ -38,11 +34,11 @@ impl BackendRegistry {
                 DocumentError::UnsupportedFormat(format!("no file extension: {}", path))
             })?;
 
-        let factory = self.get(&ext).ok_or_else(|| {
+        let open_fn = self.get(&ext).ok_or_else(|| {
             DocumentError::UnsupportedFormat(format!(".{} files are not supported", ext))
         })?;
 
-        factory.open(path)
+        open_fn(path)
     }
 }
 
@@ -54,38 +50,54 @@ pub fn open(path: &str) -> Result<Box<dyn Document>, DocumentError> {
 }
 
 pub fn init_registry(registry: BackendRegistry) {
-    GLOBAL_REGISTRY.set(registry).ok();
+    if GLOBAL_REGISTRY.set(registry).is_err() {
+        eprintln!("warning: ocean_parser registry already initialized, ignoring duplicate");
+    }
 }
 
 pub fn default_registry() -> BackendRegistry {
     let mut registry = BackendRegistry::new();
     registry.register(
         DocumentFormat::Text,
-        Arc::new(super::txt::TxtFactory),
+        Arc::new(|path| -> Result<Box<dyn Document>, DocumentError> {
+            Ok(Box::new(super::txt::TxtDocument::open(path)?))
+        }),
     );
     registry.register(
         DocumentFormat::Markdown,
-        Arc::new(super::markdown::MarkdownFactory),
+        Arc::new(|path| -> Result<Box<dyn Document>, DocumentError> {
+            Ok(Box::new(super::markdown::MarkdownDocument::open(path)?))
+        }),
     );
     registry.register(
         DocumentFormat::Html,
-        Arc::new(super::html::HtmlFactory),
+        Arc::new(|path| -> Result<Box<dyn Document>, DocumentError> {
+            Ok(Box::new(super::html::HtmlDocument::open(path)?))
+        }),
     );
     registry.register(
         DocumentFormat::Docx,
-        Arc::new(super::docx::DocxFactory),
+        Arc::new(|path| -> Result<Box<dyn Document>, DocumentError> {
+            Ok(Box::new(super::docx::DocxDocument::open(path)?))
+        }),
     );
     registry.register(
         DocumentFormat::Pptx,
-        Arc::new(super::pptx::PptxFactory),
+        Arc::new(|path| -> Result<Box<dyn Document>, DocumentError> {
+            Ok(Box::new(super::pptx::PptxDocument::open(path)?))
+        }),
     );
     registry.register(
         DocumentFormat::Xlsx,
-        Arc::new(super::xlsx::XlsxFactory),
+        Arc::new(|path| -> Result<Box<dyn Document>, DocumentError> {
+            Ok(Box::new(super::xlsx::XlsxDocument::open(path)?))
+        }),
     );
     registry.register(
         DocumentFormat::Pdf,
-        Arc::new(super::pdf::PdfFactory),
+        Arc::new(|path| -> Result<Box<dyn Document>, DocumentError> {
+            Ok(Box::new(super::pdf::PdfDocument::open(path)?))
+        }),
     );
     registry
 }

@@ -1,3 +1,10 @@
+#[path = "ocean_parser/txt_test.rs"]
+mod txt_spec;
+#[path = "ocean_parser/markdown_test.rs"]
+mod markdown_spec;
+#[path = "ocean_parser/xlsx_test.rs"]
+mod xlsx_spec;
+
 #[path = "ocean_chunk/heading_test.rs"]
 mod heading_spec;
 #[path = "ocean_chunk/split_test.rs"]

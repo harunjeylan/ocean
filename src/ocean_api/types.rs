@@ -69,11 +69,6 @@ impl From<crate::ocean_cli::sandbox::SecurityError> for ApiError {
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct DocResult {
-    pub metadata: crate::ocean_parser::DocumentMetadata,
-    pub outline: crate::ocean_parser::Outline,
-}
 
 #[derive(Debug, Clone)]
 pub struct GrepResult {

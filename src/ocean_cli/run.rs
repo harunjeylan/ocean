@@ -81,8 +81,6 @@ pub fn run() -> Result<(), String> {
             }
         }
         Commands::Metadata { file } => cmd_metadata(file),
-        Commands::Outline { file } => cmd_outline(file),
-        Commands::PageCount { file } => cmd_page_count(file),
         Commands::Search { file, query } => cmd_search(file, query),
         Commands::Grep { dir, query } => cmd_grep(dir, query),
         Commands::Read(args) => cmd_read(args),
@@ -155,16 +153,9 @@ fn setup_event_emitters(log_format: &str, log_file: Option<&str>) {
 }
 
 fn cmd_info(file: String) -> Result<(), String> {
-    let doc = api_docs::open_doc(&file).map_err(|e| e.to_string())?;
+    let meta = api_docs::open_doc(&file).map_err(|e| e.to_string())?;
     println!();
-    print_meta(&doc.metadata);
-    println!();
-    if !doc.outline.entries.is_empty() {
-        println!("Outline:");
-        print_outline(&doc.outline, 0);
-    } else {
-        println!("Outline: (empty)");
-    }
+    print_meta(&meta);
     Ok(())
 }
 
@@ -176,25 +167,6 @@ fn cmd_info_metrics() {
 fn cmd_metadata(file: String) -> Result<(), String> {
     let meta = api_docs::metadata(&file).map_err(|e| e.to_string())?;
     print_meta(&meta);
-    Ok(())
-}
-
-fn cmd_outline(file: String) -> Result<(), String> {
-    let outline = api_docs::outline(&file).map_err(|e| e.to_string())?;
-    if outline.entries.is_empty() {
-        println!("(empty outline)");
-    } else {
-        print_outline(&outline, 0);
-    }
-    Ok(())
-}
-
-fn cmd_page_count(file: String) -> Result<(), String> {
-    let count = api_docs::page_count(&file).map_err(|e| e.to_string())?;
-    match count {
-        Some(n) => println!("{}", n),
-        None => println!("(none)"),
-    }
     Ok(())
 }
 
@@ -223,7 +195,9 @@ fn cmd_grep(dir: String, query: String) -> Result<(), String> {
         }
         println!();
     }
-    println!("Total: {} match(es) in {} file(s) for '{}'", result.total_matches, result.total_files, query);
+    if result.file_matches.is_empty() {
+        println!("No matches found for '{}' in {}.", query, dir);
+    }
     Ok(())
 }
 
@@ -237,20 +211,12 @@ fn cmd_read(args: ReadArgs) -> Result<(), String> {
         Selector::Slice { skip, take }
     } else if let Some(n) = args.page {
         Selector::Page(n)
-    } else if let Some(h) = args.heading {
-        Selector::Heading(h)
-    } else if let Some(n) = args.paragraph {
-        Selector::Paragraph(n)
-    } else if let Some(n) = args.table {
-        Selector::Table(n)
     } else if let Some(n) = args.slide {
         Selector::Slide(n)
     } else if let Some(s) = args.sheet {
         Selector::Sheet(s)
     } else if let Some(c) = args.cell {
         Selector::Cell(c)
-    } else if let Some(n) = args.image {
-        Selector::Image(n)
     } else if let Some(range_str) = args.range {
         let parts: Vec<&str> = range_str.splitn(2, '-').collect();
         if parts.len() != 2 {
@@ -260,12 +226,16 @@ fn cmd_read(args: ReadArgs) -> Result<(), String> {
         let end: usize = parts[1].parse().map_err(|_| "Invalid range end".to_string())?;
         Selector::Range { start, end }
     } else {
-        return Err("No selector specified. Use --skip/--take, --page, --heading, --paragraph, --table, --slide, --sheet, --cell, --image, or --range".to_string());
+        Selector::Slice { skip: 0, take: 20 }
     };
-
-    let request = ReadRequest { file: args.file, selector };
-    let result = api_docs::read_doc(&request).map_err(|e| e.to_string())?;
+    
+    let result = api_docs::read_doc(&ReadRequest { file: args.file.clone(), selector }).map_err(|e| e.to_string())?;
     print_read_result(result);
+    Ok(())
+}
+fn cmd_hash(file: String) -> Result<(), String> {
+    let hash = api_fs::hash_file(&file).map_err(|e| e.to_string())?;
+    println!("{}", hash);
     Ok(())
 }
 
@@ -288,12 +258,6 @@ fn cmd_scan(dir: String, no_hash: bool) -> Result<(), String> {
             }
         }
     }
-    Ok(())
-}
-
-fn cmd_hash(file: String) -> Result<(), String> {
-    let hash = api_fs::hash_file(&file).map_err(|e| e.to_string())?;
-    println!("{}", hash);
     Ok(())
 }
 
@@ -335,8 +299,8 @@ fn cmd_watch(dir: String, no_sandbox: bool) -> Result<(), String> {
             }
         }
     }
-
-    watcher.unwatch(handle).map_err(|e| format!("Unwatch failed: {}", e))
+    drop(handle);
+    Ok(())
 }
 
 fn cmd_chunk(args: ChunkArgs) -> Result<(), String> {
@@ -507,6 +471,7 @@ fn cmd_index(args: IndexArgs, cli: &Cli, config: &Option<OceanConfig>) -> Result
         Ok(())
     }
 }
+
 
 fn cmd_query(args: QueryArgs, cli: &Cli, config: &Option<OceanConfig>) -> Result<(), String> {
     setup_event_emitters(

@@ -31,34 +31,23 @@ fn test_real_files() {
 
                 let meta = doc.metadata();
                 assert_eq!(meta.path, path.as_path());
-
-                let outline = doc.outline();
-                let page_count = doc.page_count();
                 let search_result = doc.search("the");
 
                 if matches!(ext.as_str(), "docx" | "pdf" | "pptx") {
-                    println!("       outline entries: {}, page_count: {:?}, search matches for 'the': {}",
-                        outline.entries.len(), page_count, search_result.len());
+                    println!("       search matches for 'the': {}",
+                        search_result.len());
                 }
 
                 if matches!(ext.as_str(), "docx" | "pdf") {
-                    if let Some(pc) = page_count {
-                        if pc > 0 {
-                            let page_read = doc.read(&Selector::Page(1));
-                            println!("       read Page(1): {:?}",
-                                page_read.as_ref().map(|r| std::mem::discriminant(r)));
-                        }
-                    }
+                    let page_read = doc.read(&Selector::Page(1));
+                    println!("       read Page(1): {:?}",
+                        page_read.as_ref().map(|r| std::mem::discriminant(r)));
                 }
 
                 if ext == "docx" {
-                    let heading_test = doc.read(&Selector::Heading("Introduction".to_string()));
-                    if heading_test.is_ok() {
-                        println!("       found heading 'Introduction'");
-                    }
-                    let table_test = doc.read(&Selector::Table(0));
-                    if table_test.is_ok() {
-                        println!("       found table 0");
+                    let page_test = doc.read(&Selector::Page(1));
+                    if page_test.is_ok() {
+                        println!("       read Page(1): OK");
                     }
                 }
 
@@ -75,12 +64,10 @@ fn test_real_files() {
                 }
 
                 if matches!(ext.as_str(), "txt" | "md" | "html") {
-                    let p0 = doc.read(&Selector::Paragraph(0));
-                    println!("       read Paragraph(0): {:?}",
+                    let p0 = doc.read(&Selector::Slice { skip: 0, take: 1 });
+                    println!("       read Slice(0,1): {:?}",
                         p0.as_ref().map(|r| std::mem::discriminant(r)));
                 }
-
-                passed += 1;
             }
             Err(e) => {
                 let is_expected = matches!(ext.as_str(), "doc" | "xyz" | "xls" | "ppt");

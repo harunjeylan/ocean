@@ -1,9 +1,9 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-use crate::ocean_parser::helpers::{build_outline_tree, validate_file_size};
+use crate::ocean_parser::helpers::validate_file_size;
 use crate::ocean_parser::{
-    Document, DocumentError, DocumentFormat, DocumentMetadata, Match, Outline,
+    Document, DocumentError, DocumentFormat, DocumentMetadata, Match,
     ReadResult, Selector,
 };
 
@@ -272,19 +272,6 @@ impl Document for MarkdownDocument {
             page_count: Some(((self.stats.line_count as f32) / 50.0).ceil() as u32),
             size: self.size,
         }
-    }
-
-    fn outline(&self) -> Outline {
-        let headings: Vec<(u8, String)> = self
-            .headings
-            .iter()
-            .map(|h| (h.level, h.text.clone()))
-            .collect();
-        Outline { entries: build_outline_tree(&headings) }
-    }
-
-    fn page_count(&self) -> Option<u32> {
-        Some(((self.stats.line_count as f32) / 50.0).ceil() as u32)
     }
 
     fn search(&self, query: &str) -> Vec<Match> {

@@ -19,8 +19,6 @@ pub enum Commands {
         metrics: bool,
     },
     Metadata { file: String },
-    Outline { file: String },
-    PageCount { file: String },
     Search { file: String, query: String },
     Grep { dir: String, query: String },
     Read(ReadArgs),
@@ -124,19 +122,11 @@ pub struct ReadArgs {
     #[arg(long)]
     pub page: Option<u32>,
     #[arg(long)]
-    pub heading: Option<String>,
-    #[arg(long)]
-    pub paragraph: Option<u32>,
-    #[arg(long)]
-    pub table: Option<u32>,
-    #[arg(long)]
     pub slide: Option<u32>,
     #[arg(long)]
     pub sheet: Option<String>,
     #[arg(long)]
     pub cell: Option<String>,
-    #[arg(long)]
-    pub image: Option<u32>,
     #[arg(long)]
     pub range: Option<String>,
     #[arg(long)]

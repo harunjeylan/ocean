@@ -157,17 +157,6 @@ pub fn print_meta(meta: &DocumentMetadata) {
     if let Some(ref m) = meta.modified { println!("  Modified: {}", m); }
     if let Some(ref p) = meta.page_count { println!("  Pages:   {}", p); }
 }
-
-pub fn print_outline(outline: &Outline, indent: usize) {
-    for entry in &outline.entries {
-        println!("{:indent$}- [L{}] {}  ({:?})", "", entry.level, entry.label, entry.selector, indent = indent);
-        if !entry.children.is_empty() {
-            let child_outline = Outline { entries: entry.children.clone() };
-            print_outline(&child_outline, indent + 2);
-        }
-    }
-}
-
 pub fn print_query_result(result: &QueryResult, verbose: bool) {
     if result.results.is_empty() {
         println!("No results found.");
@@ -255,7 +244,6 @@ pub fn print_read_result(result: ReadResult) {
             if let Some(ref cap) = caption { println!("Caption: {}", cap); }
         }
         ReadResult::Metadata(meta) => print_meta(&meta),
-        ReadResult::Outline(ref outline) => print_outline(outline, 0),
         ReadResult::Page { number, text } => {
             println!("--- Page {} ---", number);
             println!("{}", text);
@@ -280,5 +268,6 @@ pub fn print_read_result(result: ReadResult) {
                 }
             }
         }
+        _ => {}
     }
 }

@@ -1,6 +1,7 @@
 pub mod error;
 pub mod traits;
 pub mod types;
+pub mod helpers;
 pub mod registry;
 pub mod read_api;
 pub mod txt;
@@ -23,3 +24,4 @@ pub use docx::*;
 pub use pptx::*;
 pub use xlsx::*;
 pub use pdf::*;
+pub use helpers::*;

@@ -4,17 +4,15 @@ use crate::ocean_chunk::{chunk, ChunkConfig};
 use crate::ocean_fs::generate_file_id;
 use crate::ocean_parser::{open, read_all_blocks, Match, ReadResult};
 
-use super::types::{ApiError, DocResult, FileMatches, GrepResult, ReadRequest};
+use super::types::{ApiError, FileMatches, GrepResult, ReadRequest};
 
-pub fn open_doc(path: &str) -> Result<DocResult, ApiError> {
+pub fn open_doc(path: &str) -> Result<crate::ocean_parser::DocumentMetadata, ApiError> {
     let p = PathBuf::from(path);
     if !p.exists() {
         return Err(ApiError::DocError(format!("file not found: {}", path)));
     }
     let doc = open(path)?;
-    let metadata = doc.metadata();
-    let outline = doc.outline();
-    Ok(DocResult { metadata, outline })
+    Ok(doc.metadata())
 }
 
 pub fn metadata(path: &str) -> Result<crate::ocean_parser::DocumentMetadata, ApiError> {
@@ -24,24 +22,6 @@ pub fn metadata(path: &str) -> Result<crate::ocean_parser::DocumentMetadata, Api
     }
     let doc = open(path)?;
     Ok(doc.metadata())
-}
-
-pub fn outline(path: &str) -> Result<crate::ocean_parser::Outline, ApiError> {
-    let p = PathBuf::from(path);
-    if !p.exists() {
-        return Err(ApiError::DocError(format!("file not found: {}", path)));
-    }
-    let doc = open(path)?;
-    Ok(doc.outline())
-}
-
-pub fn page_count(path: &str) -> Result<Option<u32>, ApiError> {
-    let p = PathBuf::from(path);
-    if !p.exists() {
-        return Err(ApiError::DocError(format!("file not found: {}", path)));
-    }
-    let doc = open(path)?;
-    Ok(doc.page_count())
 }
 
 pub fn search_doc(path: &str, query: &str) -> Result<Vec<Match>, ApiError> {

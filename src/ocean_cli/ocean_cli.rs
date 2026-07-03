@@ -46,13 +46,6 @@ enum Commands {
 
     /// Show all document metadata fields
     Metadata { file: String },
-
-    /// Show document outline/table of contents
-    Outline { file: String },
-
-    /// Show page/slide count
-    PageCount { file: String },
-
     /// Search for text across the document
     Search {
         file: String,
@@ -122,16 +115,6 @@ fn print_meta(meta: &DocumentMetadata) {
     if let Some(ref p) = meta.page_count { println!("  Pages:   {}", p); }
 }
 
-fn print_outline(outline: &Outline, indent: usize) {
-    for entry in &outline.entries {
-        println!("{:indent$}- [L{}] {}  ({:?})", "", entry.level, entry.label, entry.selector, indent = indent);
-        if !entry.children.is_empty() {
-            let child_outline = Outline { entries: entry.children.clone() };
-            print_outline(&child_outline, indent + 2);
-        }
-    }
-}
-
 fn print_read_result(result: ReadResult) {
     match result {
         ReadResult::Text(t) => println!("{}", t),
@@ -149,7 +132,6 @@ fn print_read_result(result: ReadResult) {
             if let Some(ref cap) = caption { println!("Caption: {}", cap); }
         }
         ReadResult::Metadata(meta) => print_meta(&meta),
-        ReadResult::Outline(ref outline) => print_outline(outline, 0),
         ReadResult::Page { number, text } => {
             println!("--- Page {} ---", number);
             println!("{}", text);
@@ -189,14 +171,6 @@ fn run() -> Result<(), String> {
             let doc = open(&file).map_err(|e| format!("Failed to open: {}", e))?;
             println!();
             print_meta(&doc.metadata());
-            println!();
-            let outline = doc.outline();
-            if !outline.entries.is_empty() {
-                println!("Outline:");
-                print_outline(&outline, 0);
-            } else {
-                println!("Outline: (empty)");
-            }
             Ok(())
         }
 
@@ -207,34 +181,6 @@ fn run() -> Result<(), String> {
             }
             let doc = open(&file).map_err(|e| format!("Failed to open: {}", e))?;
             print_meta(&doc.metadata());
-            Ok(())
-        }
-
-        Commands::Outline { file } => {
-            let p = PathBuf::from(&file);
-            if !p.exists() {
-                return Err(format!("file not found: {}", file));
-            }
-            let doc = open(&file).map_err(|e| format!("Failed to open: {}", e))?;
-            let outline = doc.outline();
-            if outline.entries.is_empty() {
-                println!("(empty outline)");
-            } else {
-                print_outline(&outline, 0);
-            }
-            Ok(())
-        }
-
-        Commands::PageCount { file } => {
-            let p = PathBuf::from(&file);
-            if !p.exists() {
-                return Err(format!("file not found: {}", file));
-            }
-            let doc = open(&file).map_err(|e| format!("Failed to open: {}", e))?;
-            match doc.page_count() {
-                Some(n) => println!("{}", n),
-                None => println!("(none)"),
-            }
             Ok(())
         }
 

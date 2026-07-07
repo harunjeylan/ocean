@@ -33,7 +33,7 @@ serde_json = "1"
 chrono = { version = "0.4", features = ["serde"] }
 rpassword = "7"
 rmcp = { version = "2", features = ["server", "transport-io"] }
-toml = "0.8"
+toml = "1.1"
 
 [[bin]]
 name = "ocean"

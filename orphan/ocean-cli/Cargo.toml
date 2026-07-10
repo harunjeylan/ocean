@@ -1,0 +1,31 @@
+[package]
+name = "ocean-cli"
+edition = "2024"
+
+[[bin]]
+name = "ocean_cli"
+path = "src/main.rs"
+
+[dependencies]
+ocean-fs = { path = "../ocean-fs" }
+ocean-storage = { path = "../ocean-storage" }
+ocean-chunk = { path = "../ocean-chunk" }
+ocean-cache = { path = "../ocean-cache" }
+ocean-vector = { path = "../ocean-vector" }
+ocean-graph = { path = "../ocean-graph" }
+clap = { version = "4", features = ["derive"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+rpassword = "7"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "blocking"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+surrealdb = { version = "3", features = ["kv-mem", "kv-surrealkv"] }
+walkdir = "2"
+sha2 = "0.11"
+uuid = { version = "1", features = ["v7"] }
+notify = "8"
+crossbeam-channel = "0.5"
+glob = "0.3"
+chrono = { version = "0.4", features = ["serde"] }
+dotenvy = "0.15"
+toml = "0.8"

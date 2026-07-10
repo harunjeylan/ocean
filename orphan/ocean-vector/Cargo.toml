@@ -1,0 +1,11 @@
+[package]
+name = "ocean-vector"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+sha2 = "0.11"
+serde = { version = "1", features = ["derive"] }
+ocean-storage = { path = "../ocean-storage" }
+ocean-chunk = { path = "../ocean-chunk" }
+ocean-cache = { path = "../ocean-cache" }

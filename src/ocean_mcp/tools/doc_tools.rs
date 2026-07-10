@@ -3,7 +3,7 @@ use serde::Deserialize;
 
 use crate::ocean_api::{self, ReadRequest};
 use crate::ocean_chunk::ChunkConfig;
-use crate::ocean_parser::Selector;
+use crate::ocean_fs::parser::Selector;
 
 use super::{to_text, to_error, file_not_found, dir_not_found};
 

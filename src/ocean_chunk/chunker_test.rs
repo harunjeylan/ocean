@@ -1,6 +1,6 @@
 use crate::ocean_chunk::chunker::chunk;
 use crate::ocean_chunk::types::{ChunkConfig, ChunkError, ChunkType};
-use crate::ocean_parser::*;
+use crate::ocean_fs::parser::*;
 
 fn make_text(text: &str) -> ReadResult {
     ReadResult::Text(text.to_string())

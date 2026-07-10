@@ -40,7 +40,7 @@ use crate::ocean_cli::init::cmd_init;
 use crate::ocean_cli::mcp_setup::cmd_mcp_setup;
 use crate::ocean_cli::runtime::RuntimeMode;
 use crate::ocean_fs::*;
-use crate::ocean_parser::*;
+use crate::ocean_fs::parser::*;
 
 pub fn run() -> Result<(), String> {
     crate::ocean_cli::config::load_env_files();

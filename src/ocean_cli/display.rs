@@ -1,7 +1,7 @@
 use crate::ocean_graph::types::{Node, NodeType, Edge, Subgraph};
 use crate::ocean_query::types::QueryResult;
 
-use crate::ocean_parser::*;
+use crate::ocean_fs::parser::*;
 
 pub fn print_graph_subgraph(subgraph: &Subgraph) {
     println!("Subgraph (seed: {}, depth: {}):", subgraph.seed_id, subgraph.depth);

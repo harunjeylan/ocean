@@ -1,52 +1,5 @@
-[package]
-name = "ocean-doc"
-version = "0.1.0"
-edition = "2024"
-license = "MIT"
-description = "Document intelligence CLI — parse, chunk, embed, graph, and search documents locally"
-homepage = "https://github.com/harunjeylan/ocean"
-repository = "https://github.com/harunjeylan/ocean"
-keywords = ["document", "parser", "search", "rag", "cli"]
-categories = ["command-line-utilities", "text-processing"]
-
-[dependencies]
-walkdir = "2"
-rayon = "1"
-sha2 = "0.11"
-uuid = { version = "1", features = ["v7"] }
-notify = "8"
-mime_guess = "2"
-crossbeam-channel = "0.5"
-glob = "0.3"
-tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
-serde = { version = "1", features = ["derive"] }
-surrealdb = { version = "3", features = ["kv-mem", "kv-surrealkv"] }
-quick-xml = "0.41"
-zip = "8"
-calamine = "0.35"
-lopdf = "0.43"
-clap = { version = "4", features = ["derive"] }
-regex = "1"
-dotenvy = "0.15"
-reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "blocking"] }
-serde_json = "1"
-pulldown-cmark = "0.13"
-chrono = { version = "0.4", features = ["serde"] }
-rpassword = "7"
-rmcp = { version = "2", features = ["server", "transport-io"] }
-toml = "0.8"
-
-[[bin]]
-name = "ocean"
-path = "src/main.rs"
-
-[[bin]]
-name = "ocean_cli"
-path = "src/cli.rs"
-
-[[bin]]
-name = "ocean_mcp"
-path = "src/mcp.rs"
-
-[dev-dependencies]
-tempfile = "3"
+[workspace]
+resolver = "2"
+members = [
+    "crates/ocean-fs",
+]

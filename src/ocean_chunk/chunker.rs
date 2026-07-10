@@ -2,7 +2,7 @@ use crate::ocean_chunk::buffer::ChunkBuffer;
 use crate::ocean_chunk::heading::detect_heading;
 use crate::ocean_chunk::split::split_with_overlap;
 use crate::ocean_chunk::types::{Chunk, ChunkConfig, ChunkError, ChunkType, estimate_tokens};
-use crate::ocean_parser::*;
+use crate::ocean_fs::parser::*;
 
 pub fn chunk(
     blocks: Vec<ReadResult>,

@@ -1,0 +1,11 @@
+[package]
+name = "ocean-storage"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+surrealdb = { version = "3", features = ["kv-mem", "kv-surrealkv"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+sha2 = "0.11"
+uuid = { version = "1", features = ["v7"] }
